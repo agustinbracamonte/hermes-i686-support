@@ -1,0 +1,22 @@
+# Generated build and release artifacts
+dist/
+.work/
+wheelhouse/
+*.whl
+*.tar.gz
+SHA256SUMS
+
+# Python and Rust build state
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+target/
+cargo-target/
+
+# Local data and credentials
+.env
+config.yaml
+auth.json
+*.log
+*.bak
