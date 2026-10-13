@@ -57,8 +57,9 @@ Recovered validated evidence:
 
 - signal-cli `0.14.9`; libsignal `0.103.0`.
 - Java 21 i386 runtime; Rust host `i686-unknown-linux-gnu`; CMake 3.22.6.
-- JNI is ELF 32-bit Intel 80386 and links to standard i386 system libraries.
-- Built JARs contain the expected x86/i386 JNI resource names.
+- JNI is ELF 32-bit Intel 80386, needs GLIBC 2.30 and links to standard i386 system libraries.
+- The Java main class is major version 65 (Java 21); the fat JAR contains the expected x86/i386 JNI resources and an additional Linux x86 SQLite JDBC native library.
+- The embedded i386 JNI bytes match the staged JNI artifact.
 - Patch application checks against clean upstream tags: PASS.
 - Integration script layout, shell syntax, architecture/linkage/checksum verification: PASS.
 
@@ -91,8 +92,8 @@ The Java application layer is portable bytecode in principle; the packaged resul
 
 1. Compatibility is proven only for the documented Debian i386/Python 3.11/Hermes 0.20.0 staging evidence; Raspberry Pi OS x86 remains untested.
 2. Every future Hermes, Python, Rust, OpenSSL or Signal revision requires a fresh staged rebuild and ABI/license review.
-3. No independent, clean-room rebuild of the Signal artifacts was run in this review; only recovered artifacts, source-bound patches and checks passed.
-4. Signal binary publication is blocked by GPL/AGPL corresponding-source and full dependency-notice requirements.
+3. No independent, clean-room rebuild of the Signal artifacts was run in this review; the current source-tree fat JAR does not hash-match the recovered staged artifact.
+4. Signal binary publication is blocked by GPL/AGPL corresponding-source, complete dependency SBOM/notices, toolchain provenance and a clean rebuild/runtime proof.
 5. A public repository needs a final human license review before enabling Releases.
 
 ## Exact publication steps — require explicit approval

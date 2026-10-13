@@ -14,6 +14,6 @@ The optional Signal patch files and their license texts are under `integrations/
 
 ## Release rule
 
-Before attaching a binary to any future GitHub Release, generate a version-specific notice file/SBOM from the actual dependency graph, include required license texts and source/patch access, and verify the resulting bundle. The optional Signal artifacts are **not currently approved for redistribution**.
+Before attaching a binary to any future GitHub Release, generate a version-specific notice file/SBOM from the actual dependency graph, include required license texts and source/patch access, and verify the resulting bundle. Do not rely on a Signal fat JAR to preserve notices: its build may exclude `META-INF/LICENSE*` and `META-INF/NOTICE*`; supply an external reconciled notice bundle. The optional Signal artifacts are **not currently approved for redistribution**.
 
 The license table is a release-preparation aid, not legal advice. Verify upstream license files and dependency metadata at the pinned revisions before publishing.

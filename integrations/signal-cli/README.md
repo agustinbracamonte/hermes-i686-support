@@ -12,7 +12,7 @@ This optional guide documents a local, staged build path for `signal-cli` on a D
 | Rust | 1.98.1, `i686-unknown-linux-gnu` | Native JNI build |
 | CMake | 3.22.6 | Needed by BoringSSL build |
 
-The Java JAR is mostly portable Java bytecode. The packaged solution is **not portable across CPU ABIs**, because it includes `libsignal_jni_i386.so`; other architectures must build/package their matching JNI resource.
+The Java JAR uses classfile major version 65 and therefore requires Java 21. The Java application layer is portable in principle, but the packaged solution is **not portable across CPU ABIs**: it includes `libsignal_jni_i386.so` and a Linux x86 SQLite JDBC native library. The JNI requires GLIBC 2.30 or newer; other architectures and older libc baselines must build/package their matching native resources.
 
 ## Recovered compatibility work
 
