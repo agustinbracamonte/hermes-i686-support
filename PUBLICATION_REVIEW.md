@@ -6,8 +6,8 @@
 
 | Repository | Intended visibility | Branch | Head | Status |
 |---|---|---|---|---|
-| `hermes-i686-support` | Public | `publication-ready` | `91e088a` | Publication preparation only |
-| `pulsar-extensions` | Private | `publication-ready` | `607a861` | Publication preparation only |
+| `hermes-i686-support` | Public | `publication-ready` | Local reviewed history | Publication preparation only |
+| `pulsar-extensions` | Private | `publication-ready` | Local reviewed history | Publication preparation only |
 
 The repositories remain separate. Neither has a Git remote.
 
