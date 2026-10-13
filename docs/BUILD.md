@@ -1,30 +1,21 @@
-# Build details
+# Reproducible build procedure (experimental until clean rebuild)
 
-The builder intentionally requires source checksums as environment variables. This prevents a successful download from being mistaken for a trusted input.
+This recipe targets only the validated profile: CPython 3.11 32-bit, cryptography 50.0.0, OpenSSL 3.5.7, Rust 1.97.1 i686, CMake 3.22.6, GCC 10.2.1, GNU Make 4.3, Perl 5.32.1, maturin 1.14.1. It fails closed when Python pointer width/version, Rust host/version, CMake/GCC/Make/Perl version, source archive digests, or release versions do not match. Python build tools are pinned to pip 25.0.1, setuptools 78.1.0 and wheel 0.45.1. These pins describe the recipe; the updated build itself remains experimental until a fresh clean rebuild.
 
-## Inputs validated in the tested build
+## OpenSSL configuration flags
 
-| Input | Version | SHA-256 |
-|---|---:|---|
-| OpenSSL | 3.5.7 | `a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8` |
-| cryptography sdist | 50.0.0 | `eeac2acb5a20ed25e0ad6d1df9891a520b78b404266b6d11778f25d5d691a6c9` |
+`build-cryptography-i686.sh` invokes:
 
-## Key environment
-
-```bash
-export RUSTUP_TOOLCHAIN=stable-i686-unknown-linux-gnu
-export OPENSSL_DIR="$WORKDIR/prefix/openssl"
-export OPENSSL_STATIC=1
-export CC=gcc CXX=g++
-export CFLAGS='-m32 -fPIC' CXXFLAGS='-m32 -fPIC'
-export CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER=gcc
-export CARGO_BUILD_TARGET=i686-unknown-linux-gnu
-export CARGO_BUILD_JOBS=1
-export CARGO_TARGET_DIR="$WORKDIR/cargo-target"
+```text
+./Configure linux-x86 -m32 -fPIC --prefix=<WORKDIR>/prefix/openssl no-shared no-tests no-ssl3 no-weak-ssl-ciphers
 ```
 
-The reusable script sets these internally after confirming the requested Python has a 32-bit pointer width. It keeps source, OpenSSL prefix, venv and Cargo target in `WORKDIR` so a failed or interrupted build can resume without touching Hermes.
+- `linux-x86`: OpenSSL's 32-bit x86 Linux target.
+- `-m32`: emit i386 objects.
+- `-fPIC`: position-independent code.
+- `--prefix=...`: isolated private prefix; no system install.
+- `no-shared`: static OpenSSL libraries, so cryptography does not dynamically load system libssl/libcrypto.
+- `no-tests`: skip upstream tests in this constrained build step; a separate runtime/ABI test suite is required.
+- `no-ssl3` and `no-weak-ssl-ciphers`: disable obsolete SSLv3 and weak cipher suites.
 
-## Why static OpenSSL
-
-The tested extension dynamically links glibc/libgcc/libpthread/libdl but not `libssl` or `libcrypto`. This isolates the modern TLS dependency from an older system OpenSSL.
+The script builds under a private work directory, never installs into the active Hermes environment, and checks the resulting wheel separately. The revised recipe has not yet been clean-built; treat it as **EXPERIMENTAL**, not as proven reproducible. Do not substitute unpinned tools or omit archive SHA-256 environment variables.

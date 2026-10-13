@@ -1,15 +1,17 @@
 # Compatibility matrix
 
+Status labels describe evidence only: **PROVEN** means the named configuration was directly exercised; **EXPERIMENTAL** means documented or partially checked without full reproducible validation; **NOT TESTED** means no evidence. Do not generalize across versions or architectures.
+
 | Environment | Status | Evidence | Notes |
 |---|---|---|---|
-| Debian i386 userspace, Linux x86_64 kernel, CPython 3.11.5 32-bit | **PROBADO** | Hermes `0.20.0`; `cryptography 50.0.0`; `_rust.abi3.so` ELF i386 | The kernel/machine string can be `x86_64` while Python pointer width is 32. |
-| Rust `stable-i686-unknown-linux-gnu` 1.97.1 | **PROBADO** | Native build of `cryptography 50.0.0` | Single build job recommended on constrained hosts. |
-| OpenSSL 3.5.7 private static prefix | **PROBADO** | cryptography reports OpenSSL 3.5.7; `ldd` has no libssl/libcrypto | System stdlib OpenSSL remained 1.1.1v. |
-| Raspberry Pi OS x86 with equivalent Debian i386 userspace | **NO PROBADO** | Target motivation only | Requires a fresh staged validation; do not infer compatibility from the Debian result. |
-| Debian i386 release other than the validated environment | **NO PROBADO** | No execution evidence | Rebuild and rerun all checks. |
-| ARM, armhf, aarch64 | **NO PROBADO / fuera de alcance** | Different ABI | This repository's i686 wheel cannot be used. |
-| Hermes version newer than 0.20.0 | **NO PROBADO** | Dependency metadata may change | Inspect pins and rebuild native dependencies before upgrade. |
+| Debian i386 userspace, Linux x86_64 kernel, CPython 3.11.5 32-bit | **PROVEN (recovered staging evidence)** | Hermes 0.20.0; cryptography 50.0.0; `_rust.abi3.so` ELF i386 | Kernel/machine string may be x86_64 while the Python process is 32-bit. Pointer width and ELF machine are the ABI checks; `sysconfig.get_platform()` alone is not authoritative. |
+| Rust 1.97.1 `i686-unknown-linux-gnu` | **PROVEN for recovered build; rebuild script experimental** | Recovered cryptography 50.0.0 native build evidence | Revised automated build recipe has not itself been rerun cleanly. |
+| Private static OpenSSL 3.5.7 for cryptography | **PROVEN for recovered wheel; rebuild recipe experimental** | cryptography backend reports OpenSSL 3.5.7; extension has no dynamic libssl/libcrypto dependency | Python stdlib `ssl` may use system OpenSSL 1.1.1v; this does not establish the cryptography backend version. |
+| Raspberry Pi OS x86 with equivalent Debian i386 userspace | **NOT TESTED** | Target motivation only | Fresh staged validation required. |
+| Other Debian releases, newer Hermes/Python/cryptography/Rust/OpenSSL versions | **NOT TESTED** | No execution evidence | Rebuild and rerun the full checks. |
+| ARM, armhf, aarch64 | **OUT OF SCOPE / NOT TESTED** | Different ABI | i686 wheel cannot be used. |
+| Signal CLI i386 port | **EXPERIMENTAL** | Recovered build artifacts and source patches inspected; no clean-room reproducibility/license bundle | Do not publish JAR, JNI or native binaries. |
 
-## Interpretation
+## ABI proof
 
-`uname -m` is not an ABI proof. Require all of: 32-bit Python pointer width, native extension reported as `ELF 32-bit Intel 80386`, and compatible dynamic dependencies.
+`uname -m` and Python's `sysconfig.get_platform()` can reflect the host/kernel instead of the process ABI. Require a 32-bit CPython pointer width, a correctly tagged wheel, each native extension identified as ELF32 Intel 80386, and resolved dynamic dependencies. Cryptography must import as exactly 50.0.0 and its own backend must report OpenSSL 3.5.7. The stdlib `ssl.OPENSSL_VERSION` is informational and can legitimately differ.

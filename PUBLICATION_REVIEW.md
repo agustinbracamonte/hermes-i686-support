@@ -96,6 +96,9 @@ The Java application layer is portable bytecode in principle; the packaged resul
 4. Signal binary publication is blocked by GPL/AGPL corresponding-source, complete dependency SBOM/notices, toolchain provenance and a clean rebuild/runtime proof.
 5. A public repository needs a final human license review before enabling Releases.
 
+## Correction status
+
+This file records the prior review snapshot; its earlier test claims are historical and must not be treated as current proof. The corrective commit adds fail-closed wheel/runtime checks, an explicit release-artifact allowlist, expanded filesystem/history scanning, and behavioral positive/negative tests. See `docs/TESTING.md` and `docs/COMPATIBILITY.md` for current evidence. Signal CLI remains experimental and all Signal binaries are excluded from release collection.
 ## Exact publication steps — require explicit approval
 
 1. Confirm the intended GitHub owner/organization and public/private visibility.

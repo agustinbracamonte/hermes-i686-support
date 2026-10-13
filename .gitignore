@@ -1,22 +1,46 @@
-# Generated build and release artifacts
-dist/
-.work/
-wheelhouse/
+# Generated output and build state
+/vendor/
+/staging/
+/build/
+*.egg-info/
+/dist/
+/.work/
+/work/
+/wheelhouse/
+/release-assets/
 *.whl
 *.tar.gz
+*.zip
+*.jar
+*.so
+*.dylib
+*.dll
+*.o
+*.a
+*.class
 SHA256SUMS
 
-# Python and Rust build state
+# Python/Rust caches and environments
 .venv/
 venv/
 __pycache__/
 *.py[cod]
-target/
-cargo-target/
+/target/
+/cargo-target/
 
-# Local data and credentials
+# Local configuration, credentials and runtime state
 .env
+.env.*
+!.env.example
 config.yaml
 auth.json
+credentials*
+secrets*
 *.log
 *.bak
+*.sqlite
+*.sqlite3
+*.db
+*.jsonl
+sessions/
+state/

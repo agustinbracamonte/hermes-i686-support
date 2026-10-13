@@ -25,4 +25,4 @@ Do not restore files over a running gateway. In an approved maintenance window: 
 
 ## Release preparation
 
-Use `scripts/collect-release-assets.sh WHEELHOUSE_DIR`. Publish only the wheel(s) and `SHA256SUMS` as release assets, never in Git history. Rebuild from source for each new ABI or dependency version.
+Use `scripts/collect-release-assets.sh SOURCE_DIR EMPTY_OUT_DIR APPROVAL_MANIFEST`; it accepts one explicitly approved cryptography wheel only. The old one-argument collector invocation is no longer valid. Rebuild from source for each new ABI or dependency version; Signal CLI remains experimental and its binaries are excluded.

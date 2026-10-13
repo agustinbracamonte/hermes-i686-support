@@ -12,10 +12,7 @@ done
 out=$("$ROOT/scripts/preflight.sh" --python "${PYTHON_UNDER_TEST:-python3}")
 printf '%s\n' "$out" | grep -Fq 'preflight: PASS'
 
-out=$("$ROOT/scripts/check-runtime.sh" --python "${PYTHON_UNDER_TEST:-python3}")
-printf '%s\n' "$out" | grep -Fq 'runtime-check:'
-
-grep -Fq 'verify=(cd "$OUT_DIR" && sha256sum -c SHA256SUMS)' "$ROOT/scripts/collect-release-assets.sh"
-grep -Fq 'curl tar make gcc perl sha256sum' "$ROOT/scripts/build-cryptography-i686.sh"
-
-echo 'scripts: PASS'
+"$ROOT/scripts/check-runtime.sh" --python "${PYTHON_I686:-${HOME}/.hermes/hermes-agent/.venv/bin/python}" >/dev/null
+"$ROOT/tests/test-strict-scripts.sh"
+"$ROOT/tests/test-publication-audit.sh"
+echo 'scripts: PASS (syntax and behavioral tests)'

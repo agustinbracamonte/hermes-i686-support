@@ -18,10 +18,10 @@ It denotes support material validated against Hermes Agent `0.20.0`, not an offi
 
 | Asset | Technical result | License/privacy gate | Proposed disposition |
 |---|---|---|---|
-| `cryptography-50.0.0-cp311-abi3-linux_i686.whl` | SHA-256, ABI and runtime checked | Include cryptography/OpenSSL notices and source-access details | Candidate after final review |
-| `cffi` / `pycparser` dependency wheels | Present in recovered wheelhouse | Rebuild/check exact hashes and licenses | Candidate only after independent validation |
-| Older cryptography wheel in recovered wheelhouse | Present, but not selected for runtime verification | Version-specific validation missing | Do not publish |
-| `signal-cli-i386.jar`, `libsignal-client-…-i386.jar`, JNI `.so` | ABI and archive checks pass | GPL/AGPL source, patches, complete dependency notices/SBOM incomplete | **Do not publish** |
+| `cryptography-50.0.0-cp311-abi3-linux_i686.whl` | Exact SHA-256, metadata tag, ELF i386, extension presence and dependency closure must pass `scripts/verify-wheel.sh`; collector requires explicit approved manifest | Revised build recipe has not been independently clean-rebuilt | Candidate only; no automatic release |
+| `cffi` / `pycparser` dependency wheels | Not approved by the strict collector | Version-specific hashes, ABI and license checks still required | Do not collect or publish |
+| Older cryptography wheel | Not approved | Version-specific validation missing | Do not publish |
+| Any Signal JAR, JNI `.so` or other native binary | **EXPERIMENTAL; not approved** | Clean rebuild, corresponding source, SBOM and GPL/AGPL notice bundle incomplete | **Do not collect or publish** |
 
 ## Exact pre-publication sequence
 

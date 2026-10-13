@@ -4,11 +4,11 @@ This manifest records observed local artifacts. The files themselves are intenti
 
 | Artifact | Version / tag | SHA-256 | Release treatment |
 |---|---|---|---|
-| `cryptography` wheel | `50.0.0`, `cp311-abi3-linux_i686` | `71893373af19e01f446f3b3d98cf674c5cbf8d1842d01a1fd5ace41c097b9500` | Candidate release asset |
+| `cryptography` wheel | `50.0.0`, `cp311-abi3-linux_i686` | `71893373af19e01f446f3b3d98cf674c5cbf8d1842d01a1fd5ace41c097b9500` | **Technical test fixture only; not approved for release** |
 | `cryptography` source | `50.0.0` | `eeac2acb5a20ed25e0ad6d1df9891a520b78b404266b6d11778f25d5d691a6c9` | Download/build input |
 | OpenSSL source | `3.5.7` | `a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8` | Download/build input |
-| `cffi` wheel | `2.1.0`, CPython 3.11 i686 | Not independently rehashed for this document | Candidate dependency asset |
-| `pycparser` wheel | `3.0`, pure Python | Not independently rehashed for this document | Candidate dependency asset |
+| `cffi` wheel | `2.1.0`, CPython 3.11 i686 | Not independently rehashed for this document | **Not approved; not accepted by the strict release collector** |
+| `pycparser` wheel | `3.0`, pure Python | Not independently rehashed for this document | **Not approved; not accepted by the strict release collector** |
 
 ## Build evidence
 
@@ -25,4 +25,4 @@ This manifest records observed local artifacts. The files themselves are intenti
 - User configuration, auth state, credentials, sessions and logs tied to a person or machine.
 - Private installation paths and machine-specific build output.
 
-Use `scripts/collect-release-assets.sh` to make a fresh release-candidate directory and checksum manifest from a reviewed wheelhouse.
+Only an explicitly approved, checksummed cryptography wheel can be collected with `scripts/collect-release-assets.sh SOURCE_DIR EMPTY_OUT_DIR APPROVAL_MANIFEST`. Signal remains experimental; no JAR, JNI or native binary may be collected or published.

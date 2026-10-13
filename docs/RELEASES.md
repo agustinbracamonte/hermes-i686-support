@@ -1,25 +1,19 @@
-# Preparing GitHub Releases
+# Preparing a potential GitHub Release
 
-This repository contains instructions and scripts only. Do **not** commit wheels, toolchains, OpenSSL prefixes, virtual environments, source tarballs or `dist/` content.
+No publication is authorized. The repository currently contains source, documentation and scripts; binaries must not be committed.
 
-## Candidate release layout
+## Binary policy
 
-```
-cryptography-50.0.0-cp311-abi3-linux_i686.whl
-cffi-2.1.0-...-i686.whl
-pycparser-3.0-py3-none-any.whl
-SHA256SUMS
-BUILD-MANIFEST.md
-```
+The collector accepts exactly one manifest-approved artifact: `cryptography-50.0.0-cp311-abi3-linux_i686.whl`. It verifies the expected SHA-256, wheel metadata, ELF32 i386 architecture, extension presence, dynamic dependencies and runtime resolution. `cffi` and `pycparser` are not approved by the current collector. Signal CLI remains experimental; no JAR, JNI or native Signal binary may be collected or published.
 
-## Procedure
+## Procedure (requires separate explicit approval)
 
-1. Build from verified source in a clean i686 staging environment.
-2. Run `verify-wheel.sh` for every native wheel.
-3. Run a fresh-venv import/runtime check.
-4. Generate `SHA256SUMS` using `collect-release-assets.sh`.
-5. Attach the reviewed files to a GitHub Release; do not put them into Git.
-6. State the exact Python ABI, Rust host, OpenSSL source hash and validation output in the release notes.
+1. Rebuild from verified sources in a clean i686 staging environment; the revised build recipe has not yet been independently clean-built.
+2. Run `tests/test-scripts.sh`, `tests/test-signal-cli-integration.sh` and `scripts/publication-audit.sh`.
+3. Run `scripts/check-runtime.sh` inside the intended fresh 32-bit runtime.
+4. After an explicit asset approval, create a one-entry manifest with the exact filename and approved SHA-256, then use `scripts/collect-release-assets.sh SOURCE_DIR EMPTY_OUT_DIR APPROVAL_MANIFEST`.
+5. Recheck the generated `SHA256SUMS`, licenses, SBOM and notices. Creating assets does not authorize GitHub publication.
+6. Only after separate explicit approval may an operator create a remote, push, tag, draft or publish a Release.
 
 ## No release created
 

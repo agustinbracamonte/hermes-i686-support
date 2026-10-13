@@ -28,6 +28,10 @@ Reproducible guidance and scripts for running **Hermes Agent** on a 32-bit Debia
 
 Read `docs/INSTALL.md` before building. The matrix in `docs/COMPATIBILITY.md` distinguishes verified evidence from design-only guidance.
 
+## Evidence status
+
+The recovered Debian i386 runtime/wheel evidence is **PROVEN** for the exact matrix in `docs/COMPATIBILITY.md`. The revised build recipe has not been clean-rebuilt and remains **EXPERIMENTAL**. Signal CLI i386 is experimental and excluded from release assets. No JAR, JNI or native Signal binaries may be published.
+
 ## Release assets
 
-Built wheels remain outside Git. `scripts/collect-release-assets.sh` creates a `dist/release-assets/` directory with `SHA256SUMS`, suitable for a future GitHub Release after independent verification.
+Built wheels remain outside Git. `scripts/collect-release-assets.sh SOURCE_DIR EMPTY_OUT_DIR APPROVAL_MANIFEST` copies only the single exact cryptography 50.0.0 i686 wheel listed with an approved SHA-256 in the manifest, and reruns `verify-wheel.sh` before copying. There is no Signal artifact allowance. Collection is not publication authorization.
