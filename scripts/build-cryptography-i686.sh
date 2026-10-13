@@ -22,7 +22,7 @@ perl_version=$(perl -e 'printf "%vd", $^V'); [[ $perl_version == "$PERL_VERSION"
 mkdir -p "$WORKDIR"/{downloads,src,prefix,dist,cargo-target}; cd "$WORKDIR"
 download() { local url=$1 out=$2 sha=$3; if [[ ! -f $out ]]; then curl --fail --location --retry 3 --output "$out.tmp" "$url"; mv "$out.tmp" "$out"; fi; printf '%s  %s\n' "$sha" "$out" | sha256sum -c -; }
 download "https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz" "downloads/openssl-${OPENSSL_VERSION}.tar.gz" "$OPENSSL_SHA256"
-download "https://files.pythonhosted.org/packages/source/c/cryptography/cryptography-${CRYPTOGRAPHY_VERSION}.tar.gz" "downloads/cryptography-${CRYPTOGRAPHY_VERSION}.tar.gz" "$CRYPTOGRAPHY_SDIST_SHA256"
+download "https://files.pythonhosted.org/packages/de/41/6cbdcf9142d00fe82836fbb51e503e58088575cf7a0fe1dbff6695bf0840/cryptography-${CRYPTOGRAPHY_VERSION}.tar.gz" "downloads/cryptography-${CRYPTOGRAPHY_VERSION}.tar.gz" "$CRYPTOGRAPHY_SDIST_SHA256"
 if [[ ! -x prefix/openssl/bin/openssl ]]; then
  tar -xzf "downloads/openssl-${OPENSSL_VERSION}.tar.gz" -C src
  # Exact OpenSSL Configure flags: linux-x86 -m32 -fPIC; static libraries only; disable tests and legacy protocols.

@@ -5,7 +5,7 @@ WHEEL=${1:-}; EXPECTED_SHA256=${2:-}; EXPECTED_TAG=${EXPECTED_TAG:-cp311-abi3-li
 [[ -n $WHEEL && -n $EXPECTED_SHA256 ]] || { echo "Usage: $0 WHEEL EXPECTED_SHA256" >&2; exit 2; }
 [[ -f $WHEEL ]] || { echo 'wheel not found' >&2; exit 1; }
 [[ $EXPECTED_SHA256 =~ ^[a-fA-F0-9]{64}$ ]] || { echo 'expected SHA-256 must be 64 hex characters' >&2; exit 2; }
-for cmd in unzip sha256sum file readelf objdump ldd; do command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }; done
+for cmd in unzip sha256sum file readelf objdump; do command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }; done
 actual=$(sha256sum "$WHEEL" | awk '{print $1}')
 [[ ${actual,,} == ${EXPECTED_SHA256,,} ]] || { echo 'checksum mismatch' >&2; exit 1; }
 [[ $(basename "$WHEEL") == "cryptography-50.0.0-${EXPECTED_TAG}.whl" ]] || { echo "wheel name/version/ABI not approved: expected cryptography-50.0.0-${EXPECTED_TAG}.whl" >&2; exit 1; }
@@ -36,9 +36,8 @@ for so in "${extensions[@]}"; do
   grep -Eq 'libssl|libcrypto' <<<"${needed[*]}" && { echo "unexpected dynamic OpenSSL dependency: ${so#$tmp/}" >&2; exit 1; }
   grep -Eq '(RPATH|RUNPATH)' <<<"$dynamic" && { echo "embedded RPATH/RUNPATH forbidden: ${so#$tmp/}" >&2; exit 1; }
   if [[ $(basename "$so") == _rust*.so ]]; then rust_found=1; fi
-  # ldd must resolve dependencies on the current i386 userspace, and may not report missing objects.
-  linkage=$(LC_ALL=C ldd "$so" 2>&1) || { echo "dynamic dependency resolution failed: ${so#$tmp/}" >&2; exit 1; }
-  grep -q 'not found' <<<"$linkage" && { echo "unresolved dynamic dependency: ${so#$tmp/}" >&2; exit 1; }
+  # Static dependency inspection only: do not invoke a loader on an untrusted wheel ELF.
+  # Runtime imports are a separate staged test after provenance and SHA-256 validation.
 done
 (( rust_found == 1 )) || { echo 'cryptography _rust extension missing' >&2; exit 1; }
 echo "wheel=$(basename "$WHEEL")"; echo "sha256=$actual"; echo "native_extensions=${#extensions[@]}"; echo 'wheel-verify: PASS'

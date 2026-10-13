@@ -14,4 +14,4 @@ Status labels describe evidence only: **PROVEN** means the named configuration w
 
 ## ABI proof
 
-`uname -m` and Python's `sysconfig.get_platform()` can reflect the host/kernel instead of the process ABI. Require a 32-bit CPython pointer width, a correctly tagged wheel, each native extension identified as ELF32 Intel 80386, and resolved dynamic dependencies. Cryptography must import as exactly 50.0.0 and its own backend must report OpenSSL 3.5.7. The stdlib `ssl.OPENSSL_VERSION` is informational and can legitimately differ.
+`uname -m` and Python's `sysconfig.get_platform()` can reflect the host/kernel instead of the process ABI. A static profile check requires 32-bit CPython metadata, a correctly tagged wheel, each native extension identified as ELF32 Intel 80386, and a closed dynamic dependency set. Actual runtime import checks must run only in an isolated staging root after wheel provenance and SHA-256 validation. Recovered execution evidence is historical; no staged runtime import was performed in the current correction. The stdlib `ssl.OPENSSL_VERSION` is informational and can legitimately differ from the cryptography backend.

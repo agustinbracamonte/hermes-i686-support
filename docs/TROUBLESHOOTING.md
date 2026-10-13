@@ -16,9 +16,13 @@ The build backend executable directory must be on `PATH`. The build script invok
 
 Stop. Verify the target Python, Rust host, `CARGO_BUILD_TARGET`, compiler flags and linker. Delete only the target output in the private workspace, not the live venv.
 
-## `ldd` shows system libssl/libcrypto
+## Static-only dependency inspection
 
-The static OpenSSL build was not used. Check `OPENSSL_DIR`, `OPENSSL_STATIC=1`, and rebuild in a clean target directory.
+Use `readelf -d` and `objdump -p` to inspect `NEEDED`, RPATH and RUNPATH entries in untrusted ELF files. Never invoke `ldd` on untrusted ELF: implementations may execute the file's interpreter. Runtime loading belongs only in an isolated staging root after source/artifact provenance and checksums have been validated, as described in `docs/INSTALL.md`.
+
+## Static OpenSSL was not used
+
+Check `OPENSSL_DIR`, `OPENSSL_STATIC=1`, and rebuild in a clean target directory.
 
 ## Build is slow
 

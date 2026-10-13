@@ -5,13 +5,14 @@ set -euo pipefail
 : "${SIGNAL_CLI_SOURCE:?set SIGNAL_CLI_SOURCE to a clean signal-cli v0.14.9 checkout}"
 : "${UPSTREAM_LIBSIGNAL_JAR:?set UPSTREAM_LIBSIGNAL_JAR}"
 : "${JNI_SO:?set JNI_SO to the output of build-jni.sh}"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PATCH_DIR=$(cd "$SCRIPT_DIR/../patches" && pwd)
+"$SCRIPT_DIR/verify-patched-checkout.sh" "$SIGNAL_CLI_SOURCE" v0.14.9 "$PATCH_DIR/signal-cli-v0.14.9-java21-i386.patch" 65324d5d5dfd40f7392fd05a7f57a53927c0742bd1815c0156cc3ef7cc581e4d
 : "${OUT_DIR:=$PWD/dist/signal-cli-i686}"
 : "${JAVA_HOME:?set JAVA_HOME to a private i386 Java 21 runtime}"
 
 for cmd in zip jar sha256sum file; do command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }; done
 [[ -x $JAVA_HOME/bin/java ]] || { echo 'JAVA_HOME must contain Java' >&2; exit 1; }
-[[ -d $SIGNAL_CLI_SOURCE/.git ]] || { echo 'SIGNAL_CLI_SOURCE must be a source checkout' >&2; exit 1; }
-[[ $(git -C "$SIGNAL_CLI_SOURCE" describe --tags --always | sed 's/-dirty$//') == v0.14.9 ]] || { echo 'expected signal-cli tag v0.14.9' >&2; exit 1; }
 file "$JNI_SO" | grep -Fq 'ELF 32-bit'
 file "$JNI_SO" | grep -Fq 'Intel 80386'
 mkdir -p "$OUT_DIR" "$OUT_DIR/resource"

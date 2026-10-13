@@ -11,7 +11,7 @@
 
 1. Pin exact source versions and verify SHA-256 values.
 2. Keep build output in an ignored workspace.
-3. Validate Python pointer width, `file`, `readelf`, `ldd`, runtime import and checksum.
+3. Validate Python pointer width, `file`, `readelf`, `objdump` and wheel checksum statically. Perform imports only under `docs/INSTALL.md`'s provenance-checked staging protocol.
 4. Add a focused, non-destructive test or validation command.
 5. Document the upstream revision, licenses and any local patch.
 

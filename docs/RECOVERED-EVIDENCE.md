@@ -7,7 +7,7 @@
 - OpenSSL 3.5.7 source archive plus its recorded SHA-256.
 - A private OpenSSL prefix built with `-m32`.
 - Rust i686 toolchain metadata and Cargo target output.
-- ELF, `readelf`, `ldd`, package-version and checksum evidence recorded in this repository's documentation.
+- Historical ELF, `readelf`, `ldd`, package-version and checksum observations recorded in earlier notes. Do not run `ldd` on untrusted ELF; current verification uses static `readelf`/`objdump` inspection.
 
 ## Technical log result
 

@@ -1,6 +1,6 @@
 # Hermes i686 Support
 
-Reproducible guidance and scripts for running **Hermes Agent** on a 32-bit Debian/i386 userspace, including Raspberry Pi OS x86 installations where the kernel may report `x86_64`.
+Pinned, checksum-verified build guidance and scripts for running **Hermes Agent** on a 32-bit Debian/i386 userspace, including Raspberry Pi OS x86 installations where the kernel may report `x86_64`. No binary reproducibility claim is made.
 
 > This is a local preparation for a future public GitHub repository. It has no remote and has not been published.
 
@@ -19,18 +19,20 @@ Reproducible guidance and scripts for running **Hermes Agent** on a 32-bit Debia
 
 ## Quick start
 
+Read `docs/INSTALL.md` first. The runtime command below is only for isolated staging and requires the staged wheel's validated digest.
+
 ```bash
 ./scripts/preflight.sh --python /path/to/python3.11 --require-i686
 ./scripts/build-cryptography-i686.sh  # set both required SHA-256 variables first
 ./scripts/verify-wheel.sh dist/cryptography-*.whl EXPECTED_SHA256
-./scripts/check-runtime.sh --python /path/to/staged-venv/bin/python
+./scripts/check-runtime.sh --python /path/to/stage/venv/bin/python --staging-root /path/to/stage --wheel /path/to/stage/wheelhouse/cryptography-50.0.0-cp311-abi3-linux_i686.whl --sha256 EXPECTED_SHA256
 ```
 
-Read `docs/INSTALL.md` before building. The matrix in `docs/COMPATIBILITY.md` distinguishes verified evidence from design-only guidance.
+The matrix in `docs/COMPATIBILITY.md` distinguishes recovered evidence from current execution and design-only guidance.
 
 ## Evidence status
 
-The recovered Debian i386 runtime/wheel evidence is **PROVEN** for the exact matrix in `docs/COMPATIBILITY.md`. The revised build recipe has not been clean-rebuilt and remains **EXPERIMENTAL**. Signal CLI i386 is experimental and excluded from release assets. No JAR, JNI or native Signal binaries may be published.
+Previously recovered Debian i386 runtime/wheel evidence is **PROVEN only for that recovered exact matrix** in `docs/COMPATIBILITY.md`; it was not re-executed in this correction. The revised build recipe has not been clean-rebuilt and remains **EXPERIMENTAL**. Signal CLI i386 is experimental and excluded from release assets. No JAR, JNI or native Signal binaries may be published.
 
 ## Release assets
 
