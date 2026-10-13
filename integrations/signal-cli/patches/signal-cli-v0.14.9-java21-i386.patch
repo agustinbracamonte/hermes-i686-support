@@ -1,0 +1,138 @@
+diff --git a/build.gradle.kts b/build.gradle.kts
+index fb1a415..93e851e 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -14,8 +14,11 @@ allprojects {
+ }
+ 
+ java {
+-    sourceCompatibility = JavaVersion.VERSION_25
+-    targetCompatibility = JavaVersion.VERSION_25
++    // Java 25 has no Linux i386 runtime. This local i386 build uses the
++    // validated private Java 21 LTS runtime; Java 21 provides the APIs used
++    // by this release (including SequencedCollection).
++    sourceCompatibility = JavaVersion.VERSION_21
++    targetCompatibility = JavaVersion.VERSION_21
+ 
+     if (!JavaVersion.current().isCompatibleWith(targetCompatibility)) {
+         toolchain {
+@@ -40,7 +43,7 @@ graalvmNative {
+             if (System.getenv("GRAALVM_HOME") == null) {
+                 toolchainDetection.set(true)
+                 javaLauncher.set(javaToolchains.launcherFor {
+-                    languageVersion.set(JavaLanguageVersion.of(25))
++                    languageVersion.set(JavaLanguageVersion.of(21))
+                 })
+             } else {
+                 toolchainDetection.set(false)
+diff --git a/buildSrc/build.gradle.kts b/buildSrc/build.gradle.kts
+index b7c492e..2866c47 100644
+--- a/buildSrc/build.gradle.kts
++++ b/buildSrc/build.gradle.kts
+@@ -6,12 +6,14 @@ plugins {
+     `kotlin-dsl`
+ }
+ 
++// Java 25 has no Linux i386 runtime. This build logic uses no Java-25-only
++// APIs, so compile it for the private Java 21 LTS runtime used by this port.
+ tasks.named<KotlinCompilationTask<KotlinJvmCompilerOptions>>("compileKotlin").configure {
+-    compilerOptions.jvmTarget.set(JvmTarget.JVM_25)
++    compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
+ }
+ 
+ java {
+-    targetCompatibility = JavaVersion.VERSION_25
++    targetCompatibility = JavaVersion.VERSION_21
+ }
+ 
+ repositories {
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index b9c5bd5..9e73d3b 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -2,7 +2,7 @@
+ slf4j = "2.0.20"
+ coroutines = "1.11.0"
+ junit = "6.1.3"
+-micronaut-json-schema = "2.3.1"
++micronaut-json-schema = "1.7.4"
+ micronaut-core = "5.2.14"
+ signal-service = "2.15.3_unofficial_154"
+ 
+diff --git a/lib/build.gradle.kts b/lib/build.gradle.kts
+index b5e7f31..5ceca9d 100644
+--- a/lib/build.gradle.kts
++++ b/lib/build.gradle.kts
+@@ -4,8 +4,9 @@ plugins {
+ }
+ 
+ java {
+-    sourceCompatibility = JavaVersion.VERSION_25
+-    targetCompatibility = JavaVersion.VERSION_25
++    // Keep the local i386 build aligned with the private Java 21 LTS runtime.
++    sourceCompatibility = JavaVersion.VERSION_21
++    targetCompatibility = JavaVersion.VERSION_21
+ 
+     if (!JavaVersion.current().isCompatibleWith(targetCompatibility)) {
+         toolchain {
+diff --git a/lib/src/main/java/org/asamk/signal/manager/helper/StorageHelper.java b/lib/src/main/java/org/asamk/signal/manager/helper/StorageHelper.java
+index 8438cdb..cffb43f 100644
+--- a/lib/src/main/java/org/asamk/signal/manager/helper/StorageHelper.java
++++ b/lib/src/main/java/org/asamk/signal/manager/helper/StorageHelper.java
+@@ -569,13 +569,13 @@ public class StorageHelper {
+     private Map<GroupIdV1, StorageId> generateGroupV1StorageIds(List<GroupIdV1> groupIds) {
+         return groupIds.stream()
+                 .collect(Collectors.toMap(recipientId -> recipientId,
+-                        _ -> StorageId.forGroupV1(KeyUtils.createRawStorageId())));
++                        ignoredGroup -> StorageId.forGroupV1(KeyUtils.createRawStorageId())));
+     }
+ 
+     private Map<GroupIdV2, StorageId> generateGroupV2StorageIds(List<GroupIdV2> groupIds) {
+         return groupIds.stream()
+                 .collect(Collectors.toMap(recipientId -> recipientId,
+-                        _ -> StorageId.forGroupV2(KeyUtils.createRawStorageId())));
++                        ignoredGroup -> StorageId.forGroupV2(KeyUtils.createRawStorageId())));
+     }
+ 
+     private Map<StickerPackId, StorageId> generateStickerPackStorageIds(
+@@ -583,7 +583,7 @@ public class StorageHelper {
+     ) {
+         return stickerPacks.stream()
+                 .collect(Collectors.toMap(stickerPack -> stickerPack.packId(),
+-                        _ -> StorageId.forStickerPack(KeyUtils.createRawStorageId())));
++                        ignoredStickerPack -> StorageId.forStickerPack(KeyUtils.createRawStorageId())));
+     }
+ 
+     private void storeManifestLocally(
+diff --git a/src/main/java/org/asamk/signal/Main.java b/src/main/java/org/asamk/signal/Main.java
+index 0c9bddc..79b708f 100644
+--- a/src/main/java/org/asamk/signal/Main.java
++++ b/src/main/java/org/asamk/signal/Main.java
+@@ -40,7 +40,7 @@ import java.security.Security;
+ 
+ public class Main {
+ 
+-    static void main(String[] args) {
++    public static void main(String[] args) {
+         // enable unlimited strength crypto via Policy, supported on relevant JREs
+         Security.setProperty("crypto.policy", "unlimited");
+         installSecurityProviderWorkaround();
+@@ -146,12 +146,12 @@ public class Main {
+ 
+     private static int getStatusForError(final CommandException e) {
+         return switch (e) {
+-            case UserErrorException _ -> 1;
+-            case UnexpectedErrorException _ -> 2;
+-            case IOErrorException _ -> 3;
+-            case UntrustedKeyErrorException _ -> 4;
+-            case RateLimitErrorException _ -> 5;
+-            case CaptchaRejectedErrorException _ -> 6;
++            case UserErrorException ignored -> 1;
++            case UnexpectedErrorException ignored -> 2;
++            case IOErrorException ignored -> 3;
++            case UntrustedKeyErrorException ignored -> 4;
++            case RateLimitErrorException ignored -> 5;
++            case CaptchaRejectedErrorException ignored -> 6;
+             case null -> 2;
+         };
+     }

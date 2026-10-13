@@ -1,0 +1,2 @@
+# Upstream-derived patch payloads preserve their original whitespace so they apply exactly.
+integrations/signal-cli/patches/*.patch whitespace=-trailing-space

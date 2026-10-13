@@ -10,6 +10,8 @@ This repository's own scripts and documentation are MIT-licensed; it does **not*
 | signal-cli | Optional integration, not bundled | GPL-3.0-only; source obligations apply to distributed modified binaries | https://github.com/AsamK/signal-cli |
 | libsignal | Optional JNI integration, not bundled | AGPL-3.0-only; source obligations apply to distributed modified binaries/network use | https://github.com/signalapp/libsignal |
 
+The optional Signal patch files and their license texts are under `integrations/signal-cli/patches/` and `integrations/signal-cli/LICENSES/`. They remain excluded from binary releases unless the full corresponding-source and dependency-notice obligations are met.
+
 ## Release rule
 
 Before attaching a binary to any future GitHub Release, generate a version-specific notice file/SBOM from the actual dependency graph, include required license texts and source/patch access, and verify the resulting bundle. The optional Signal artifacts are **not currently approved for redistribution**.

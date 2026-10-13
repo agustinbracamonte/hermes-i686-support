@@ -1,0 +1,15 @@
+diff --git a/rust/message-backup/build.rs b/rust/message-backup/build.rs
+index c2e2465..6378d4e 100644
+--- a/rust/message-backup/build.rs
++++ b/rust/message-backup/build.rs
+@@ -27,7 +27,9 @@ impl CustomizeCallback for DeriveVisitUnknownFields {
+ }
+ 
+ fn main() {
+-    const PROTOS_DIR: &str = "protos";
++    // The proto sources in this crate live under src/proto.  This path is also
++    // passed to prost as the include root, so it must match the input files.
++    const PROTOS_DIR: &str = "src/proto";
+ 
+     let out_dir = format!(
+         "{}/{PROTOS_DIR}",
