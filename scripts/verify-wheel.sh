@@ -14,6 +14,7 @@ unzip -qq "$WHEEL" -d "$tmp"
 metadata=$(find "$tmp" -type f -path '*/WHEEL' -print -quit)
 [[ -n $metadata ]] || { echo 'missing WHEEL metadata' >&2; exit 1; }
 grep -Fxq 'Root-Is-Purelib: false' "$metadata" || { echo 'expected native wheel' >&2; exit 1; }
+[[ $(grep -c '^Tag:' "$metadata") == 1 ]] || { echo 'wheel must declare exactly one platform/ABI tag' >&2; exit 1; }
 grep -Fxq "Tag: $EXPECTED_TAG" "$metadata" || { echo 'ABI/platform tag mismatch' >&2; exit 1; }
 package_metadata=$(find "$tmp" -type f -path '*/METADATA' -print -quit)
 [[ -n $package_metadata ]] || { echo 'missing package METADATA' >&2; exit 1; }
