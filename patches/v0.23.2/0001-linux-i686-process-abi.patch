@@ -1,0 +1,468 @@
+diff --git a/pm/package.py b/pm/package.py
+index 159ba4b4c3..9e9fbe0860 100644
+--- a/pm/package.py
++++ b/pm/package.py
+@@ -158,7 +158,7 @@ class Package:
+         the verified answer, anything else is the diagnosis."""
+         binary = self.binary(entry, target)
+         if binary is None:
+-            return ""
++            return _linux_entry_elf_reason(entry, target)
+         return self._binary_reason(binary, entry, target)
+ 
+     def repair_staged_verification(self, entry: Path, target: str, reason: str) -> tuple[str, str]:
+@@ -178,7 +178,7 @@ class Package:
+             return _missing_reason(binary, entry)
+         if machine_matches_binary(binary, target) is False and target not in self.emulated_arch_targets:
+             return f"{binary.name} is not a {target} binary"
+-        return ""
++        return _linux_entry_elf_reason(entry, target)
+ 
+     def env(self, entry: Path, target: str) -> dict:
+         diff: dict = {}
+@@ -221,7 +221,7 @@ class DebPackage(Package):
+         expected = entry / self.prefix_rel / self.main_rel(target)
+         if not expected.is_file() and not expected.is_symlink():
+             return f"{expected.relative_to(entry)} missing under {native(entry)}"
+-        return ""
++        return _linux_entry_elf_reason(entry, target)
+ 
+     def main_rel(self, target: str) -> str:
+         raise NotImplementedError
+@@ -339,8 +339,12 @@ def machine_matches_binary(binary: Path, target: str) -> Optional[bool]:
+                 machine = int.from_bytes(sig[4:6], "little")
+                 return machine == {"x64": 0x8664, "arm64": 0xAA64}.get(arch)
+             if head[:4] == b"\x7fELF":
++                if len(head) < 20:
++                    return False
+                 machine = int.from_bytes(head[18:20], "little")
+-                return machine == {"x64": 0x3E, "arm64": 0xB7}.get(arch)
++                elf_identity = (head[4], head[5], machine)
++                expected = {"i686": (1, 1, 0x03), "x64": (2, 1, 0x3E), "arm64": (2, 1, 0xB7)}.get(arch)
++                return expected is not None and elf_identity == expected
+             if head[:4] in (b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf"):
+                 cpu = struct.unpack("<I", head[4:8])[0]
+                 return cpu == {"x64": 0x01000007, "arm64": 0x0100000C}.get(arch)
+@@ -351,6 +355,23 @@ def machine_matches_binary(binary: Path, target: str) -> Optional[bool]:
+     return None
+ 
+ 
++def _linux_entry_elf_reason(entry: Path, target: str) -> str:
++    """Reject a mixed-width ELF payload in an i686 Linux tool entry."""
++    if target not in ("linux-i686", "linux-i686-musl"):
++        return ""
++    for path in entry.rglob("*"):
++        if not path.is_file():
++            continue
++        try:
++            with path.open("rb") as handle:
++                is_elf = handle.read(4) == b"\x7fELF"
++        except OSError as exc:
++            return f"cannot inspect {path.name} in the {target} entry: {exc}"
++        if is_elf and machine_matches_binary(path, target) is not True:
++            return f"{path.name} is not an ELF32/EM_386 object for {target}"
++    return ""
++
++
+ def _entry_listing(entry: Path, limit: int = 12) -> str:
+     """Top-level names of a store entry, for verification diagnoses."""
+     if not entry.is_dir():
+diff --git a/pm/store.py b/pm/store.py
+index cd84fea3a3..38984777e1 100644
+--- a/pm/store.py
++++ b/pm/store.py
+@@ -7,6 +7,7 @@ import platform
+ import re
+ import shutil
+ import stat
++import struct
+ import sys
+ import threading
+ import tempfile
+@@ -25,6 +26,8 @@ JUNK_NAMES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini", ".localized"})
+ ALL_TARGETS = (
+     "win32-x64",
+     "win32-arm64",
++    "linux-i686",
++    "linux-i686-musl",
+     "linux-x64",
+     "linux-arm64",
+     "linux-x64-musl",
+@@ -33,11 +36,59 @@ ALL_TARGETS = (
+     "darwin-x64",
+     "darwin-arm64",
+ )
+-MUSL_TARGETS = frozenset({"linux-x64-musl", "linux-arm64-musl"})
++MUSL_TARGETS = frozenset({"linux-i686-musl", "linux-x64-musl", "linux-arm64-musl"})
++
++
++def _linux_process_arch(machine: str, pointer_bytes: int, elf_identity: tuple[int, int]) -> str:
++    """Resolve x86 Linux userspace from its Python process ABI, not the kernel.
++
++    ``platform.machine()`` is uname-derived on Linux: a 32-bit Python on an
++    x86_64 kernel still reports x86_64. The interpreter ELF class and machine
++    distinguish i686 from x86_64 and reject x32 or mixed-width runtimes.
++    """
++    machine = machine.strip().lower()
++    if machine in ("x86_64", "amd64", "x64", "i386", "i486", "i586", "i686", "x86"):
++        expected = {
++            (4, (1, 3)): "i686",       # ELFCLASS32 / EM_386
++            (8, (2, 62)): "x86_64",   # ELFCLASS64 / EM_X86_64
++        }.get((pointer_bytes, elf_identity))
++        kernel_is_x86 = machine in ("x86_64", "amd64", "x64")
++        process_is_x86 = machine in ("i386", "i486", "i586", "i686", "x86")
++        if expected == "i686" and (kernel_is_x86 or process_is_x86):
++            return expected
++        if expected == "x86_64" and kernel_is_x86:
++            return expected
++        raise RuntimeError(
++            f"unsupported or inconsistent Linux x86 process ABI: kernel={machine}, "
++            f"pointer_bytes={pointer_bytes}, ELF={elf_identity}"
++        )
++    if machine in ("aarch64", "arm64"):
++        if pointer_bytes == 8 and elf_identity == (2, 183):  # ELFCLASS64 / EM_AARCH64
++            return "aarch64"
++        raise RuntimeError(
++            f"unsupported or inconsistent Linux ARM process ABI: kernel={machine}, "
++            f"pointer_bytes={pointer_bytes}, ELF={elf_identity}"
++        )
++    return machine
++
++
++def _linux_interpreter_elf_identity() -> tuple[int, int]:
++    """Read the running Python interpreter's ELF class and e_machine."""
++    try:
++        with open(os.path.realpath(sys.executable), "rb") as handle:
++            header = handle.read(20)
++    except OSError as exc:
++        raise RuntimeError(f"cannot inspect the running Python ELF ABI: {exc}") from exc
++    if len(header) < 20 or header[:4] != b"\x7fELF" or header[5] not in (1, 2):
++        raise RuntimeError("cannot safely determine Linux process ABI: Python is not a supported ELF executable")
++    byteorder = "little" if header[5] == 1 else "big"
++    return header[4], int.from_bytes(header[18:20], byteorder)
+ 
+ 
+ def _native_machine() -> str:
+     """Native host arch; PM also runs alone before the app is importable."""
++    if sys.platform == "linux":
++        return _linux_process_arch(platform.machine(), struct.calcsize("P"), _linux_interpreter_elf_identity())
+     try:
+         from hermes_platform.host.facts import native_arch
+     except ModuleNotFoundError as exc:
+@@ -154,6 +205,8 @@ def current_target() -> str:
+     machine = _native_machine()
+     if machine in ("arm64", "aarch64"):
+         arch = "arm64"
++    elif machine in ("i386", "i486", "i586", "i686", "x86"):
++        arch = "i686"
+     elif machine in ("x86_64", "amd64", "x64"):
+         arch = "x64"
+     else:
+diff --git a/scripts/install.sh b/scripts/install.sh
+index e3a2c18cf2..ec38ed6145 100755
+--- a/scripts/install.sh
++++ b/scripts/install.sh
+@@ -312,16 +312,54 @@ uv_bootstrap_pin() {
+ }
+ # --- END GENERATED: bootstrap pins ---
+ 
++# --- BEGIN: Linux process ABI probe ---
++# uname describes the kernel. The ELF interpreter launched by this shell
++# describes the userland that the bootstrapped uv must run in.
++linux_abi_target_from_elf() {
++    local _kernel="$1" _bits="$2" _class="$3" _data="$4" _machine="$5"
++    [ "$_data" = 1 ] || return 1 # Supported Linux targets are little-endian.
++    case "$_kernel" in
++        x86_64|amd64|x64)
++            case "$_bits:$_class:$_machine" in
++                32:1:0003) echo i686 ;;
++                64:2:003e) echo x64 ;;
++                *) return 1 ;;
++            esac
++            ;;
++        i386|i486|i586|i686|x86)
++            [ "$_bits:$_class:$_machine" = "32:1:0003" ] && echo i686 || return 1
++            ;;
++        aarch64|arm64)
++            [ "$_bits:$_class:$_machine" = "64:2:00b7" ] && echo arm64 || return 1
++            ;;
++        *) return 1 ;;
++    esac
++}
++
++linux_process_arch_from_elf() {
++    local _exe="$1" _kernel="$2" _bits="$3" _magic _class _data _machine
++    [ -r "$_exe" ] || return 1
++    _magic="$(od -An -tx1 -N4 "$_exe" 2>/dev/null | tr -d '[:space:]')"
++    _class="$(od -An -tu1 -j4 -N1 "$_exe" 2>/dev/null | tr -d '[:space:]')"
++    _data="$(od -An -tu1 -j5 -N1 "$_exe" 2>/dev/null | tr -d '[:space:]')"
++    _machine="$(od -An -tx2 -j18 -N2 "$_exe" 2>/dev/null | tr -d '[:space:]')"
++    [ "$_magic" = 7f454c46 ] || return 1
++    linux_abi_target_from_elf "$_kernel" "$_bits" "$_class" "$_data" "$_machine"
++}
++
++linux_process_arch() {
++    local _bits
++    _bits="$(getconf LONG_BIT 2>/dev/null)" || return 1
++    linux_process_arch_from_elf "/proc/$$/exe" "$(uname -m)" "$_bits"
++}
++# --- END: Linux process ABI probe ---
++
+ uv_bootstrap_target() {
+     # Map this host to a pm/lock.json target key (<os>-<arch>).
+     local _arch
+-    case "$(uname -m)" in
+-        arm64|aarch64) _arch="arm64" ;;
+-        x86_64|amd64)  _arch="x64" ;;
+-        *) return 1 ;;
+-    esac
+     case "$(uname -s)" in
+         Linux)
++            _arch="$(linux_process_arch)" || return 1
+             # Same precedence as pm/store.py::_is_musl_libc: the native
+             # userland's ELF interpreter decides; ldd and a musl loader on
+             # disk are fallbacks only (a glibc host may carry musl as a
+@@ -349,7 +387,14 @@ uv_bootstrap_target() {
+                 echo "linux-$_arch"
+             fi
+             ;;
+-        Darwin) echo "darwin-$_arch" ;;
++        Darwin)
++            case "$(uname -m)" in
++                arm64|aarch64) _arch="arm64" ;;
++                x86_64|amd64)  _arch="x64" ;;
++                *) return 1 ;;
++            esac
++            echo "darwin-$_arch"
++            ;;
+         *) return 1 ;;
+     esac
+ }
+@@ -373,6 +418,14 @@ ensure_uv() {
+     fi
+     local _store="${HERMES_RUNTIME_DIR:-$HERMES_HOME/tools}"
+     local _entry="$_store/uv-$UV_PIN_VERSION-$_target"
++    if [[ "$_target" == linux-* ]] && [ -x "$_entry/uv" ]; then
++        local _expected_arch="${_target#linux-}" _cached_arch
++        _expected_arch="${_expected_arch%%-*}"
++        _cached_arch="$(linux_process_arch_from_elf "$_entry/uv" "$(uname -m)" "$(getconf LONG_BIT 2>/dev/null)")" \
++            || fail "cached uv is not a valid Linux ELF for $_target" uv_unusable
++        [ "$_cached_arch" = "$_expected_arch" ] \
++            || fail "cached uv is $_cached_arch, expected $_expected_arch for $_target" uv_unusable
++    fi
+     UV_CMD="$_entry/uv"
+     if [ ! -x "$UV_CMD" ]; then
+         log "Downloading uv $UV_PIN_VERSION ($_target)"
+diff --git a/setup-hermes.sh b/setup-hermes.sh
+index d93b8195ad..95f73bfd19 100755
+--- a/setup-hermes.sh
++++ b/setup-hermes.sh
+@@ -69,6 +69,49 @@ case "$(uname -s)" in
+   MINGW*|MSYS*|CYGWIN*) os=win32 ;;
+   *) echo -e "${RED}✗${NC} unsupported OS $(uname -s)" >&2; exit 1 ;;
+ esac
++
++# --- BEGIN: Linux process ABI probe ---
++# uname describes the kernel. The ELF interpreter launched by this shell
++# describes the userland that the bootstrapped uv must run in.
++linux_abi_target_from_elf() {
++    local _kernel="$1" _bits="$2" _class="$3" _data="$4" _machine="$5"
++    [ "$_data" = 1 ] || return 1 # Supported Linux targets are little-endian.
++    case "$_kernel" in
++        x86_64|amd64|x64)
++            case "$_bits:$_class:$_machine" in
++                32:1:0003) echo i686 ;;
++                64:2:003e) echo x64 ;;
++                *) return 1 ;;
++            esac
++            ;;
++        i386|i486|i586|i686|x86)
++            [ "$_bits:$_class:$_machine" = "32:1:0003" ] && echo i686 || return 1
++            ;;
++        aarch64|arm64)
++            [ "$_bits:$_class:$_machine" = "64:2:00b7" ] && echo arm64 || return 1
++            ;;
++        *) return 1 ;;
++    esac
++}
++
++linux_process_arch_from_elf() {
++    local _exe="$1" _kernel="$2" _bits="$3" _magic _class _data _machine
++    [ -r "$_exe" ] || return 1
++    _magic="$(od -An -tx1 -N4 "$_exe" 2>/dev/null | tr -d '[:space:]')"
++    _class="$(od -An -tu1 -j4 -N1 "$_exe" 2>/dev/null | tr -d '[:space:]')"
++    _data="$(od -An -tu1 -j5 -N1 "$_exe" 2>/dev/null | tr -d '[:space:]')"
++    _machine="$(od -An -tx2 -j18 -N2 "$_exe" 2>/dev/null | tr -d '[:space:]')"
++    [ "$_magic" = 7f454c46 ] || return 1
++    linux_abi_target_from_elf "$_kernel" "$_bits" "$_class" "$_data" "$_machine"
++}
++
++linux_process_arch() {
++    local _bits
++    _bits="$(getconf LONG_BIT 2>/dev/null)" || return 1
++    linux_process_arch_from_elf "/proc/$$/exe" "$(uname -m)" "$_bits"
++}
++# --- END: Linux process ABI probe ---
++
+ if [ "$os" = win32 ]; then
+   # PROCESSOR_ARCHITECTURE lies under an emulated shell (x64 msys on a
+   # WoA box reports AMD64); the registry carries the machine's truth.
+@@ -77,6 +120,8 @@ if [ "$os" = win32 ]; then
+     ARM64) arch=arm64 ;;
+     *) arch=x64 ;;
+   esac
++elif [ "$os" = linux ]; then
++  arch="$(linux_process_arch)" || { echo -e "${RED}✗${NC} cannot verify Linux process ABI for $(uname -m)" >&2; exit 1; }
+ else
+   case "$(uname -m)" in
+     arm64|aarch64) arch=arm64 ;;
+@@ -103,18 +148,25 @@ pin() { # $1 = field (url | sha256 | version), $2 = package (default: uv)
+     }' "$lock"
+ }
+ uv_version="$(pin version)"
++uv_url="$(pin url)"
++uv_sha="$(pin sha256)"
+ py_version="$(pin version python | cut -d+ -f1 | cut -d. -f1,2)"
+ [ -n "$uv_version" ] || { echo -e "${RED}✗${NC} no uv pin in pm/lock.json" >&2; exit 1; }
++[ -n "$uv_url" ] && [[ "$uv_sha" =~ ^[a-f0-9]{64}$ ]] || { echo -e "${RED}✗${NC} no valid uv artifact pin for $target" >&2; exit 1; }
+ 
+ store="${HERMES_RUNTIME_DIR:-$HOME/.hermes/tools}"
+ entry="$store/uv-$uv_version-$target"
+ uv="$entry/uv"; [ "$os" = win32 ] && uv="$entry/uv.exe"
+ 
+ if [ -x "$uv" ]; then
++  if [ "$os" = linux ]; then
++    cached_arch="$(linux_process_arch_from_elf "$uv" "$(uname -m)" "$(getconf LONG_BIT 2>/dev/null)")" \
++      || { echo -e "${RED}✗${NC} cached uv is not a valid Linux ELF for $target" >&2; exit 1; }
++    [ "$cached_arch" = "$arch" ] || { echo -e "${RED}✗${NC} cached uv is $cached_arch, expected $arch for $target" >&2; exit 1; }
++  fi
+   echo -e "${GREEN}✓${NC} pinned uv found ($("$uv" --version 2>/dev/null))"
+ else
+-  url="$(pin url)"; sha="$(pin sha256)"
+-  [ -n "$url" ] && [ -n "$sha" ] || { echo -e "${RED}✗${NC} no uv artifact for $target" >&2; exit 1; }
++  url="$uv_url"; sha="$uv_sha"
+   echo -e "${CYAN}→${NC} Staging pinned uv $uv_version ($target) into the pm store..."
+   mkdir -p "$store"
+   tmp="$(mktemp -d "$store/.bootstrap-XXXXXX")"; trap 'rm -rf "$tmp"' EXIT
+diff --git a/tests/pm/test_store.py b/tests/pm/test_store.py
+index 3cd11a8421..b977e27ea4 100644
+--- a/tests/pm/test_store.py
++++ b/tests/pm/test_store.py
+@@ -10,6 +10,117 @@ import pytest
+ from pm.store import extract, flatten_single_dir, tree_digest
+ 
+ 
++@pytest.mark.parametrize(
++    ("kernel", "pointer_bytes", "elf_identity", "expected"),
++    [
++        ("x86_64", 4, (1, 3), "i686"),
++        ("i686", 4, (1, 3), "i686"),
++        ("x86_64", 8, (2, 62), "x86_64"),
++        ("aarch64", 8, (2, 183), "aarch64"),
++    ],
++)
++def test_linux_process_arch_uses_process_abi(kernel, pointer_bytes, elf_identity, expected):
++    from pm.store import _linux_process_arch
++
++    assert _linux_process_arch(kernel, pointer_bytes, elf_identity) == expected
++
++
++@pytest.mark.parametrize(
++    ("kernel", "pointer_bytes", "elf_identity"),
++    [
++        ("x86_64", 4, (1, 62)),  # x32 ABI is not i686.
++        ("x86_64", 8, (1, 3)),   # ELF32 cannot be installed as x64.
++        ("aarch64", 4, (1, 40)), # 32-bit ARM userland is not ARM64.
++    ],
++)
++def test_linux_process_arch_rejects_unknown_or_mixed_abi(kernel, pointer_bytes, elf_identity):
++    from pm.store import _linux_process_arch
++
++    with pytest.raises(RuntimeError, match="unsupported or inconsistent"):
++        _linux_process_arch(kernel, pointer_bytes, elf_identity)
++
++
++@pytest.mark.platforms("linux")
++def test_current_target_matches_the_native_python_process_abi():
++    import platform
++    import struct
++
++    from pm.store import current_target
++
++    machine = platform.machine().lower()
++    if machine in ("x86_64", "amd64", "x64", "i386", "i486", "i586", "i686", "x86"):
++        expected = "linux-i686" if struct.calcsize("P") == 4 else "linux-x64"
++    elif machine in ("aarch64", "arm64"):
++        expected = "linux-arm64"
++    else:
++        pytest.skip(f"no supported target assertion for {machine}")
++    assert current_target() == expected
++
++
++@pytest.mark.parametrize(
++    ("target", "elf_class", "elf_machine", "matches"),
++    [
++        ("linux-i686", 1, 3, True),
++        ("linux-i686", 2, 3, False),
++        ("linux-x64", 2, 62, True),
++        ("linux-x64", 1, 62, False),
++        ("linux-arm64", 2, 183, True),
++        ("linux-arm64", 2, 62, False),
++    ],
++)
++def test_elf_verification_checks_class_and_machine(tmp_path, target, elf_class, elf_machine, matches):
++    from pm.package import machine_matches_binary
++
++    binary = tmp_path / "fixture"
++    header = bytearray(64)
++    header[:4] = b"\x7fELF"
++    header[4:6] = bytes((elf_class, 1))
++    header[18:20] = elf_machine.to_bytes(2, "little")
++    binary.write_bytes(header)
++
++    assert machine_matches_binary(binary, target) is matches
++
++
++def test_i686_elf_verification_requires_little_endian(tmp_path):
++    from pm.package import machine_matches_binary
++
++    binary = tmp_path / "big-endian"
++    header = bytearray(64)
++    header[:4] = b"\x7fELF"
++    header[4:6] = bytes((1, 2))
++    header[18:20] = (3).to_bytes(2, "little")
++    binary.write_bytes(header)
++
++    assert machine_matches_binary(binary, "linux-i686") is False
++
++
++def test_i686_package_verification_rejects_a_mixed_width_shared_object(tmp_path):
++    from pm.package import Package
++
++    entry = tmp_path / "entry"
++    entry.mkdir()
++    library = entry / "libplugin.so"
++    header = bytearray(64)
++    header[:4] = b"\x7fELF"
++    header[4:6] = bytes((2, 1))
++    header[18:20] = (62).to_bytes(2, "little")
++    library.write_bytes(header)
++
++    assert "ELF32/EM_386" in Package().verify(entry, "linux-i686")
++
++
++def test_i686_pm_install_fails_closed_when_the_lock_has_no_uv_row(tmp_path, monkeypatch):
++    from pm import paths
++    from pm.install import stage_only
++    from pm.package import InstallError
++
++    store = tmp_path / "store"
++    monkeypatch.setattr(paths, "store_root", lambda: store)
++    with pytest.raises(InstallError, match="no artifact for linux-i686 in the lockfile"):
++        stage_only("uv", "linux-i686")
++    assert not list(store.glob("fetch-*"))
++
++
+ @pytest.mark.platforms("any")
+ def test_metadata_does_not_change_extracted_layout_or_payload_digest(tmp_path: Path):
+     archive = tmp_path / "package.tar.gz"
