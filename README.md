@@ -9,6 +9,8 @@ Pinned, checksum-verified build guidance and scripts for running **Hermes Agent*
 - Build and verify a local `cryptography` wheel for Python 3.11 i686.
 - Use a private static OpenSSL prefix to avoid system OpenSSL ABI constraints.
 - Validate Python pointer width, native ELF objects, dynamic linkage and checksums.
+- Build CPython 3.14.9 and Node 26.12.1 from pinned sources with serial, resumable i686 recipes.
+- Run pnpm 12.15.0 from its official WASM distribution under Node, without a second native executable.
 - Stage an Hermes install without modifying a running gateway.
 - Apply the v0.23.2 i686 ABI and ELF-validation patchset to the exact upstream commit.
 
@@ -31,7 +33,7 @@ Read `docs/INSTALL.md` first. The runtime command below is only for isolated sta
 
 The matrix in `docs/COMPATIBILITY.md` distinguishes recovered evidence from current execution and design-only guidance.
 
-For the v0.23.2 patch series and current evidence, see [`docs/V0232-IMPLEMENTATION-STATUS.md`](docs/V0232-IMPLEMENTATION-STATUS.md). The series is applied and tested in a disposable source archive with `tests/test-v0232-patchset.sh`; it adds only the uv i686 artifact row whose release digest was verified locally.
+For the v0.23.2 patch series and current evidence, see [`docs/V0232-IMPLEMENTATION-STATUS.md`](docs/V0232-IMPLEMENTATION-STATUS.md) and [`docs/V0232-RUNTIME-BUILDS.md`](docs/V0232-RUNTIME-BUILDS.md). The series is applied and tested in a disposable source archive with `tests/test-v0232-patchset.sh`; it includes process-ABI selection, generic ELF validation, verified uv 0.13.5 and the i686 pnpm WASM path. The runtime guide also documents serial CPython/Node builds and pnpm WASM verification.
 
 ## Evidence status
 

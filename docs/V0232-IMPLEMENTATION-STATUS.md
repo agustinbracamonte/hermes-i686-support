@@ -34,9 +34,9 @@ HERMES_PYTHON=/path/to/python-with-pytest tests/test-v0232-patchset.sh /path/to/
 
 ## Lock gaps and artifact evidence
 
-The verified uv pin below is the first `linux-i686` row added to the v0.23.2 lock. The 15 remaining Linux-x64 candidates need individually reviewed i686 artifact rows and digests before PM can install them:
+The verified uv pin was the first binary `linux-i686` row added to the v0.23.2 lock. The pnpm 12.15.0 WASM artifact is now also pinned for `linux-i686`; 14 remaining Linux-x64 candidates need individually reviewed i686 artifact rows and digests before PM can install them:
 
-`bws`, `chromium`, `cua-driver`, `ffmpeg`, `gh`, `iron-proxy`, `just`, `llamacpp-cpu`, `llamacpp-cuda`, `llamacpp-hip`, `llamacpp-vulkan`, `node`, `pnpm`, `python`, `ripgrep`.
+`bws`, `chromium`, `cua-driver`, `ffmpeg`, `gh`, `iron-proxy`, `just`, `llamacpp-cpu`, `llamacpp-cuda`, `llamacpp-hip`, `llamacpp-vulkan`, `node`, `python`, `ripgrep`.
 
 The other six lock packages have different target semantics: `dmgbuild` and `llamacpp-metal` are macOS tools; `git` is supplied by the Linux host; `npm` is pinned as a target-independent `any` artifact; `termux-docker` is Android ARM64 only; `whispercpp-cpu` has no Linux-x64 row. Their absence is not a claim of i686 compatibility.
 
@@ -47,10 +47,15 @@ Runtime artifact checks performed for this milestone:
 | uv 0.13.5 | [Official release](https://github.com/astral-sh/uv/releases/tag/0.13.5), asset `uv-i686-unknown-linux-gnu.tar.gz`, 17,987,531 bytes. GitHub release API digest: `sha256:f5713d6c05d77d01de9655270d713ba87ed45391752f489c80bbf1690bccc17c`; published `.sha256` sidecar asset digest: `sha256:bf04536e7b5564ab322ab286a8033830d53bc8462ed04e81407208d6a11df5a1` | Downloaded the archive; locally computed SHA-256 and the published sidecar both matched the GitHub release digest. Extracted `uv` and `uvx` are ELF32, little-endian, `EM_386`. The binary was not executed on x86_64. The exact URL and digest are now in the `linux-i686` lock row and generated shell bootstrap pin. |
 | CPython 3.14.9+20261021 | [python-build-standalone release](https://github.com/astral-sh/python-build-standalone/releases/tag/20261021) has x86_64 and AArch64 Linux builds, plus i686 Windows builds; no i686 Linux build | No official Linux i686 binary identified. Build and verify CPython in isolated staging. |
 | Node 26.12.1 | Official [`SHASUMS256.txt`](https://nodejs.org/dist/v26.12.1/SHASUMS256.txt) lists `node-v26.12.1.tar.xz` as `053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c`; binary list has `linux-x64`, `linux-arm64`, and x64-musl Linux assets, no 32-bit Linux asset | Source checksum is recorded for a future build. No official i686 runtime binary or digest was found. |
+| pnpm 12.15.0 WASM | Official npm package `@pnpm/wasm`; `engines.node >=22.13`; tarball npm integrity `sha512-uxV61T7Sn34SAVUkzZf0xYNW0Ocw59OCHYRNdY2pOm4xE3Z+r2ptXOd2XTiWQBOZ8qgyMLs69F4ZHcUakvFR2Q==` | Tarball SHA-256 `172c9d9a2b8b82b00a67323ffa6d34c32f8706279661329ea460432b95c9da1f` verified locally. The package contains a 44,951,421-byte WASM module and no native ELF/PE/Mach-O/`.node` file. Host Node 24.22.1 x64 ran pnpm and a local offline install; i686 execution remains pending. |
 
-The CPython source archive SHA-256 was not captured: the python.org source URL returned HTTP 403 from this environment. Obtain and verify its official source digest before starting the build. The uv archive bytes were downloaded and independently recomputed as described above.
+The CPython source-build recipe now pins Git tag object `17acf00d155cb8536eca1c3af3a8404db648e37f`, commit `ead82c07db1f111d613926ed1b6667411d768125`, and tree `a0de950923dd481d2fd0f5bdc42ed9821763cbc4`. The python.org source archive URL still returns HTTP 403, so no official sdist SHA-256 is claimed. Node source commit `bc2e01dcf6acd5cf7d169b5f26cf89abaaeb41f1` was resolved separately; its downloaded source tar matched the official release hash above. Node upstream marks Linux x86 as Experimental and currently requires GCC >=13.2 or Clang >=19.1 in its Linux build guide.
 
-The 102-dependency wheel counts in `CODEX-HANDOFF-V0232.md` are operator-reported staging findings, not reproduced in this implementation. The reported breakdown (44 exact locked matches, 48 compatible locked wheels to retrieve, 10 without locked i686-compatible wheels) must be reconciled against the exact v0.23.2 `uv.lock`, selected extras, wheel tags, and digests before any candidate or build count is treated as confirmed. No wheel was built or added here.
+## Púlsar staging report (operator-supplied, not reproduced here)
+
+The latest report supersedes the older 102-dependency estimate in `CODEX-HANDOFF-V0232.md`: the current plan selects 101 dependencies; 92/92 reported compatible wheels have been downloaded and verified in staging; nine have no compatible wheel for that plan. `cffi 2.1.1` and `psutil 7.2.2` reportedly passed an isolated offline sync but have not been integrated with the real lock. Púlsar also reports local i686 pins for uv 0.13.5, FFmpeg 9.0.1, ripgrep 15.2.0 and gh 2.97.0, plus local bootstrap/ABI fixes. None of those results is treated as reproduced by this public work.
+
+No wheel was re-downloaded, inspected, built, or added in this milestone. The counts, lock coverage, and `cffi`/`psutil` integration remain operator evidence pending offline lock reconciliation.
 
 ## Test evidence
 
@@ -69,6 +74,13 @@ Executed in this work session:
 - `ruff check pm/package.py pm/store.py pm/install.py pm/cli.py hermes_cli/local_runtime/binaries.py tests/pm/test_store.py tests/pm/test_pm_core.py` on the patched source — exit 0.
 - `bash -n scripts/install.sh setup-hermes.sh` and `git diff --check` on the patched source — exit 0.
 - `scripts/apply-v0232-patches.sh --apply` — exit 0 on a disposable clone; the original pinned source checkout remained clean.
+- `tests/test-v0232-patchset.sh` with ordered patch 0003 — exit 0; 103 focused tests passed and one macOS-only test skipped. The set includes PM core/install/doctor coverage and three pnpm-WASM package/lock regressions.
+- `scripts/test-v0232-pnpm-wasm-pm-stage.sh` — exit 0; PM fetched the official WASM tarball over loopback, enforced the lock SHA, installed the i686 store entry, and checked its launcher layout and ELF scan without executing it.
+- `scripts/verify-v0232-pnpm-wasm.sh` with the official npm tarballs — exit 0 on Node 24.22.1 x64; the regular package failed closed when native-binary network access was disabled, while `@pnpm/wasm` ran version and offline local-file install checks.
+- `scripts/build-cpython-v0232-i686.sh --prepare-only` — exit 0; exact CPython tag object/commit/tree verified; repeated invocation reused its source checkpoint.
+- `scripts/build-node-v0232-i686.sh --prepare-only` — exit 0; official Node source SHA verified and extraction checkpoint resumed. Both build scripts' `--preflight-only` reject this ELF64 x86_64 process before compiling.
+- `tests/test-v0232-runtime-builds.sh` — exit 0; syntax, serial-job rejection, bad archive hash, ELF32/x64 fixture, and checkpoint fingerprint coverage passed.
+- Both `--prepare-only` paths passed using nonexistent compiler paths and reused checkpoints; both `--preflight-only` paths correctly rejected this host's ELF64 process.
 
 | Check | Evidence label | Status |
 |---|---|---|
@@ -79,20 +91,24 @@ Executed in this work session:
 | PM lock/download/install | HOSTED CI | An isolated PM cross-stage downloaded the local copy of the exact official archive over loopback and verified the lock SHA, extraction, store entry and ELF class. |
 | ELF executable/shared-object validation | HOSTED CI + STATIC | ELF32/EM_386 accepted; ELF64, wrong `e_machine`/endianness, mixed-width payloads, and a custom `Package.verify()` override are rejected through the common PM verifier. `doctor` reports the incompatibility. |
 | Downloader checksum enforcement | HOSTED CI | Focused upstream local-server tests exercise wrong-digest rejection; the real uv archive also passed PM's lock-backed SHA check. |
+| pnpm WASM lock/package stage | HOSTED CI | Official npm integrity and SHA-256 verified; PM downloaded from loopback, enforced the pinned i686 digest, staged launchers/module, and rejected invalid manifests/modules in fixtures. x64/ARM64 pnpm URLs and hashes are asserted unchanged. |
+| pnpm WASM CLI and offline install | HOSTED CI, x64 process | Node 24.22.1 x64 ran `@pnpm/wasm@12.15.0` and installed a local-file fixture offline. This is not native i686 evidence. |
+| CPython/Node source preparation | HOSTED CI + STATIC | CPython tag object/commit/tree and Node official source checksum verified; source extraction and checkpoints resume. No compilation performed. |
 | Native Linux i686 Python and Bash | NOT RUN | No native i686 userspace or interpreter is attached to this environment. |
 | Native ARM64 | NOT RUN | ARM64 is covered with ELF fixtures; no ARM64 execution host was attached. |
-| Full PM install, Python wheels, Node/npm, gateway | NOT RUN | i686 lock rows and runtimes are not staged; no full install was attempted. |
+| Native CPython/Node i686 builds and pnpm WASM on i686 | NOT RUN | The build shell/compiler are ELF64/x86_64. Build scripts fail closed; Node's x86 target is Experimental upstream. |
+| Full PM install, Python wheels, Node/npm, gateway | NOT RUN | No Node i686 artifact/lock row or complete dependency closure exists here. The 92 reported wheels were not downloaded again and no full install was attempted. |
 
 The host for this implementation is Linux x86_64. The test environment was built with the checkout's `pm.build_env` using bootstrap CPython 3.12.14 and the managed CPython 3.14.9 test interpreter. A passing x86_64 or fixture test is not native i686 evidence. Use an isolated Debian 11 i386 staging image/device for the remaining runtime gates in `V0232-ACCEPTANCE.md`.
 
 ## Next engineering milestones
 
-1. **CPython:** prepare and validate a serial, resumable CPython 3.14.9 i686 source-build recipe with checkpoints, exact source checksum, SSL/SQLite/ctypes checks, and ELF32 validation.
-2. **Node:** prepare the same checkpointed workflow for Node 26.12.1; verify the final ELF32 binary and npm without reusing x64 pins.
-3. **pnpm:** confirm whether the 12.15.0 package is a JavaScript distribution usable under Node i686, and add reproducible PM/install coverage without an extra native executable if verified.
-4. **Remaining PM rows:** review each applicable missing tool against release assets and digests; keep unsupported packages explicit and do not infer compatibility from version names.
-5. **Wheel integration:** add a sanitized reconciliation tool for Púlsar's reported 92 verified compatible wheels and nine unresolved dependencies. It must compare package/version/tags/hashes to the exact lock and report operator-provided versus locally reproduced evidence without downloading those wheels again.
-6. **Púlsar migration:** continue only in the separate private repository described by `PRIVATE-INTEGRATION-SETUP.md`. Use [`PULSAR-V0232-MIGRATION-CHECKLIST.md`](PULSAR-V0232-MIGRATION-CHECKLIST.md) as a sanitized contract/test plan; no private source was available or copied into this public repo.
+1. Run the CPython 3.14.9 and Node 26.12.1 recipes on isolated ELF32/i686 staging with the documented compiler and system dependencies; capture interpreter/runtime ELF hashes and smoke results.
+2. Run the pnpm WASM CLI and offline install with that Node using `--require-ia32`; measure memory on the target before accepting it for Púlsar.
+3. Add and verify the locally built Node artifact in the private staging lock, then test the full PM dependency closure there. Do not publish the binary in this public repository.
+4. Review the 14 remaining PM rows against official assets and digests; keep unsupported packages explicit.
+5. Reconcile Púlsar's current 101-dependency / 92-wheel / 9-unresolved report against the actual lock and existing wheelhouse offline; do not download those wheels again.
+6. Continue Púlsar's private migration only in the separate repository described by `PRIVATE-INTEGRATION-SETUP.md`; this public work contains no private source or customization details.
 
 ## Review follow-up and boundaries
 

@@ -33,6 +33,7 @@ test_home="$TMP/hermes-home"
 mkdir -p "$test_home"
 HERMES_HOME="$test_home" HERMES_PYTHON="$PYTHON" \
     "$TMP/source/scripts/run_tests.sh" \
-    tests/pm/test_store.py tests/pm/test_downloader.py tests/pm/test_downloader_integrity.py
+    tests/pm/test_store.py tests/pm/test_pm_core.py tests/pm/test_downloader.py tests/pm/test_downloader_integrity.py \
+    tests/pm/test_pnpm_wasm.py
 
 echo 'v0.23.2-patchset: PASS (clean pinned source, patch application, PM ABI/ELF/download regression tests)'
