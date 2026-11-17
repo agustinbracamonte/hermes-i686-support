@@ -1,0 +1,235 @@
+diff --git a/pm/lock.json b/pm/lock.json
+index ed67ebac30..cb4094283e 100644
+--- a/pm/lock.json
++++ b/pm/lock.json
+@@ -604,6 +604,12 @@
+             "url": "https://registry.npmjs.org/pnpm/-/pnpm-12.15.0.tgz"
+           }
+         ],
++        "linux-i686": [
++          {
++            "sha256": "172c9d9a2b8b82b00a67323ffa6d34c32f8706279661329ea460432b95c9da1f",
++            "url": "https://registry.npmjs.org/@pnpm/wasm/-/wasm-12.15.0.tgz"
++          }
++        ],
+         "linux-arm64": [
+           {
+             "sha256": "8117d65f28e627e949d5fc65d63342266326826a56fa374317bf13fe1166a50e",
+diff --git a/pm/packages.py b/pm/packages.py
+index 54a5ed1b32..0a99215fb8 100644
+--- a/pm/packages.py
++++ b/pm/packages.py
+@@ -3,6 +3,7 @@ live in pm/lock.json (written by `pm lock`), never here."""
+-
++
+ from __future__ import annotations
+-
++
++import json
+ import logging
+ import os
+ import shutil
+@@ -795,23 +796,24 @@ class Npm(BinaryPackage):
+-
++
+ @register
+ class Pnpm(BinaryPackage):
+-    """pnpm installs the repo's JS workspaces. pnpm 12 is a native executable
+-    (@pnpm/exe.<target>); the `pnpm` package of the same version is only the
+-    launcher that downloads it, so pm pins both and keeps the launcher's dist/:
+-    the bundled node-gyp the executable looks for beside itself to build
+-    dependencies that ship a binding.gyp. Without it a host node-gyp on PATH
+-    (or none) would build them."""
++    """pnpm installs the repo's JS workspaces. pnpm 12 normally uses a native
++    @pnpm/exe.<target> executable; its same-version `pnpm` npm package is only
++    a launcher that downloads that executable. Linux i686 uses the official
++    @pnpm/wasm distribution, whose CLI is WASM run by the pinned Node package
++    and needs no second native executable."""
+-
++
+     name = "pnpm"
+     # Lifecycle scripts and node-gyp run on the node pm installs.
+     deps = ("node",)
+-    binary_rel = {"win32": "pnpm.exe", "posix": "pnpm"}
++    binary_rel = {"win32": "pnpm.exe", "posix": "pnpm", "linux-i686": "bin/pnpm"}
+     flatten = False
+     # pnpm names its Termux build after the OS, not the libc: a bionic-linked executable.
+     exe_platforms = {"linux-arm64-bionic": "android-arm64"}
+     on_demand = {"linux-arm64-bionic": "the Termux .deb ships a prebuilt TUI; `hermes dashboard` fetches pnpm to build the web UI"}
+-
++
+     def fetch_urls(self, version: str, target: str) -> list[str]:
++        if target == "linux-i686":
++            return [f"https://registry.npmjs.org/@pnpm/wasm/-/wasm-{version}.tgz"]
+         exe = self.exe_platforms.get(target, target)
+         return [
+             f"https://registry.npmjs.org/@pnpm/exe.{exe}/-/exe.{exe}-{version}.tgz",
+@@ -822,6 +824,22 @@ class Pnpm(BinaryPackage):
+         from pm.store import extract
+-
++
+         extract(archive, staged)
++        if target == "linux-i686":
++            package = staged / "package"
++            if not (package / "dist" / "pnpm.wasm").is_file():
++                raise InstallError(self.name, "@pnpm/wasm archive has no dist/pnpm.wasm")
++            bindir = staged / "bin"
++            bindir.mkdir()
++            for name, cli in (("pnpm", "pnpm.mjs"), ("pn", "pnpm.mjs"), ("pnpx", "pnpx.mjs"), ("pnx", "pnpx.mjs")):
++                wrapper = bindir / name
++                wrapper.write_text(
++                    "#!/bin/sh\n"
++                    'here="$(cd "$(dirname "$0")/.." && pwd)"\n'
++                    f'exec node "$here/package/dist/{cli}" "$@"\n',
++                    encoding="utf-8",
++                )
++                wrapper.chmod(0o755)
++            return
+         package = staged / "package"
+         dist = package / "dist"
+         if dist.is_dir():
+@@ -831,6 +849,44 @@ class Pnpm(BinaryPackage):
+                 retry_held(lambda: item.rename(staged / item.name))
+         retry_held(lambda: remove_tree(package))
+-
++
++    def verify(self, entry: Path, target: str) -> str:
++        if target != "linux-i686":
++            return super().verify(entry, target)
++        package = entry / "package"
++        manifest_path = package / "package.json"
++        wasm = package / "dist" / "pnpm.wasm"
++        try:
++            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
++        except (OSError, json.JSONDecodeError) as exc:
++            return f"could not read @pnpm/wasm package manifest: {exc}"
++        if manifest.get("name") != "@pnpm/wasm" or manifest.get("version") != self._locked_version():
++            return "@pnpm/wasm name/version does not match the PM lock"
++        if manifest.get("engines", {}).get("node") != ">=22.13":
++            return "@pnpm/wasm Node engine requirement differs from the verified package"
++        if not wasm.is_file():
++            return "@pnpm/wasm archive is missing dist/pnpm.wasm"
++        try:
++            with wasm.open("rb") as handle:
++                magic = handle.read(4)
++        except OSError as exc:
++            return f"could not read @pnpm/wasm module: {exc}"
++        if magic != b"\x00asm":
++            return "@pnpm/wasm module has an invalid WebAssembly header"
++        for name in ("pnpm", "pn", "pnpx", "pnx"):
++            wrapper = entry / "bin" / name
++            if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
++                return f"@pnpm/wasm launcher is missing or not executable: {name}"
++        if target != current_target():
++            return ""
++        return super().verify(entry, target)
++
++    @staticmethod
++    def _locked_version() -> str:
++        from pm.lock import Lockfile
++        from pm import paths
++
++        return Lockfile(paths.lockfile_path()).version("pnpm")
++
+     def latest_versions(self, target: str, locked=None) -> list[str]:
+         latest = npm_dist_tags("pnpm").get("latest")
+         return [latest] if latest else []
+diff --git a/tests/pm/test_pnpm_wasm.py b/tests/pm/test_pnpm_wasm.py
+new file mode 100644
+index 0000000000..89a3f009c6
+--- /dev/null
++++ b/tests/pm/test_pnpm_wasm.py
+@@ -0,0 +1,93 @@
++"""The Linux i686 pnpm 12.15.0 entry is the official WASM package, not a native shim."""
++
++from __future__ import annotations
++
++import io
++import json
++import tarfile
++from pathlib import Path
++
++import pm.packages
++from pm.package import verify_package_entry
++from pm.registry import get_package
++
++
++WASM_URL = "https://registry.npmjs.org/@pnpm/wasm/-/wasm-12.15.0.tgz"
++WASM_SHA256 = "172c9d9a2b8b82b00a67323ffa6d34c32f8706279661329ea460432b95c9da1f"
++
++
++def _wasm_archive(path: Path, *, version: str = "12.15.0", magic: bytes = b"\x00asm") -> Path:
++    manifest = {
++        "name": "@pnpm/wasm",
++        "version": version,
++        "engines": {"node": ">=22.13"},
++        "bin": {"pnpm": "dist/pnpm.mjs"},
++    }
++    entries = {
++        "package/package.json": json.dumps(manifest).encode(),
++        "package/dist/pnpm.wasm": magic + b"\x01\x00\x00\x00",
++        "package/dist/pnpm.mjs": b"// fixture only\n",
++        "package/dist/pnpx.mjs": b"// fixture only\n",
++    }
++    with tarfile.open(path, "w:gz") as archive:
++        for name, content in entries.items():
++            member = tarfile.TarInfo(name)
++            member.size = len(content)
++            member.mode = 0o644
++            archive.addfile(member, io.BytesIO(content))
++    return path
++
++
++def test_pnpm_i686_pin_and_other_platform_urls_are_unchanged():
++    package = get_package("pnpm")
++    assert package.fetch_urls("12.15.0", "linux-i686") == [WASM_URL]
++    assert package.fetch_urls("12.15.0", "linux-x64") == [
++        "https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.15.0.tgz",
++        "https://registry.npmjs.org/pnpm/-/pnpm-12.15.0.tgz",
++    ]
++    assert package.fetch_urls("12.15.0", "linux-arm64") == [
++        "https://registry.npmjs.org/@pnpm/exe.linux-arm64/-/exe.linux-arm64-12.15.0.tgz",
++        "https://registry.npmjs.org/pnpm/-/pnpm-12.15.0.tgz",
++    ]
++
++    lock = json.loads(Path(pm.packages.__file__).parents[1].joinpath("pm/lock.json").read_text())
++    artifact = lock["packages"]["pnpm"]["artifacts"]["linux-i686"]
++    assert artifact == [{"url": WASM_URL, "sha256": WASM_SHA256}]
++    assert lock["packages"]["pnpm"]["artifacts"]["linux-x64"] == [
++        {"sha256": "402f7045b1e0587acb1542f18d38afbccb6babf3c7451394e6fb3d9f0160c6ca", "url": "https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.15.0.tgz"},
++        {"sha256": "f5173f6127cc505cdb36ec17719fe54a8511c6fd8560c7ceb4bf7c73e3b4458b", "url": "https://registry.npmjs.org/pnpm/-/pnpm-12.15.0.tgz"},
++    ]
++    assert lock["packages"]["pnpm"]["artifacts"]["linux-arm64"] == [
++        {"sha256": "8117d65f28e627e949d5fc65d63342266326826a56fa374317bf13fe1166a50e", "url": "https://registry.npmjs.org/@pnpm/exe.linux-arm64/-/exe.linux-arm64-12.15.0.tgz"},
++        {"sha256": "f5173f6127cc505cdb36ec17719fe54a8511c6fd8560c7ceb4bf7c73e3b4458b", "url": "https://registry.npmjs.org/pnpm/-/pnpm-12.15.0.tgz"},
++    ]
++
++
++def test_pnpm_wasm_unpack_wires_cli_and_verifies_cross_target(tmp_path, monkeypatch):
++    package = get_package("pnpm")
++    archive = _wasm_archive(tmp_path / "wasm-12.15.0.tgz")
++    entry = tmp_path / "pnpm-12.15.0-linux-i686"
++    package.unpack(archive, entry, "linux-i686")
++    monkeypatch.setattr(pm.packages, "current_target", lambda: "linux-x64")
++
++    assert verify_package_entry(package, entry, "linux-i686") == ""
++    assert package.binary(entry, "linux-i686") == entry / "bin" / "pnpm"
++    for name in ("pnpm", "pn", "pnpx", "pnx"):
++        wrapper = entry / "bin" / name
++        assert wrapper.is_file()
++        assert wrapper.stat().st_mode & 0o111
++        assert "exec node" in wrapper.read_text()
++    assert (entry / "package" / "dist" / "pnpm.wasm").read_bytes().startswith(b"\x00asm")
++
++
++def test_pnpm_wasm_rejects_wrong_version_and_bad_module(tmp_path, monkeypatch):
++    package = get_package("pnpm")
++    monkeypatch.setattr(pm.packages, "current_target", lambda: "linux-x64")
++
++    wrong_version = tmp_path / "wrong-version"
++    package.unpack(_wasm_archive(tmp_path / "wrong-version.tgz", version="12.14.0"), wrong_version, "linux-i686")
++    assert "name/version" in package.verify(wrong_version, "linux-i686")
++
++    bad_module = tmp_path / "bad-module"
++    package.unpack(_wasm_archive(tmp_path / "bad-module.tgz", magic=b"ELF!"), bad_module, "linux-i686")
++    assert "invalid WebAssembly header" in package.verify(bad_module, "linux-i686")
