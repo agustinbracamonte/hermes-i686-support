@@ -58,17 +58,64 @@ actual_target=$(uv_bootstrap_target) || fail 'install.sh rejected the current Li
 [[ "$actual_target" == "linux-$expected" || "$actual_target" == "linux-$expected-"* ]] \
     || fail "install.sh target disagrees with process ABI: $actual_target"
 
-# The v0.23.2 lock has no i686 uv row yet. The installer must refuse it,
-# while the existing x64 and ARM64 rows remain available.
+# Exercise each Linux target selector with an x86_64 kernel fixture. The
+# ELF fixtures above separately prove how the process ABI is derived.
+fake_kernel=x86_64
+fake_arch=i686
+uname() {
+    case "${1:-}" in
+        -s) echo Linux ;;
+        -m) echo "$fake_kernel" ;;
+        *) command uname "$@" ;;
+    esac
+}
+linux_process_arch() { echo "$fake_arch"; }
+actual_target=$(uv_bootstrap_target) || fail 'install.sh rejected a simulated i686 process'
+[[ "$actual_target" == linux-i686 ]] || fail "install.sh mapped simulated i686 to $actual_target"
+fake_arch=x64
+actual_target=$(uv_bootstrap_target) || fail 'install.sh rejected a simulated x64 process'
+[[ "$actual_target" == linux-x64 ]] || fail "install.sh changed x64 target mapping: $actual_target"
+
+# setup-hermes.sh must use the same process ABI and preserve Darwin mappings.
+sed -n '/^setup_target_arch() {/,/^}/p' "$UPSTREAM/setup-hermes.sh" > "$TMP/setup-target.sh"
+[[ -s "$TMP/setup-target.sh" ]] || fail 'setup-hermes target resolver missing'
+# shellcheck disable=SC1091
+source "$TMP/setup-target.sh"
+fake_arch=i686
+[[ $(setup_target_arch linux) == i686 ]] || fail 'setup-hermes mapped an i686 process incorrectly'
+fake_kernel=arm64
+[[ $(setup_target_arch darwin) == arm64 ]] || fail 'setup-hermes changed Darwin ARM64 mapping'
+fake_kernel=x86_64
+[[ $(setup_target_arch darwin) == x64 ]] || fail 'setup-hermes changed Darwin x64 mapping'
+
+# Bootstrap pins must match the real lock exactly. The x64/ARM64 values are
+# explicitly retained; no neighboring architecture pin is regenerated.
 sed -n '/^# --- BEGIN GENERATED: bootstrap pins /,/^# --- END GENERATED: bootstrap pins ---$/p' \
     "$UPSTREAM/scripts/install.sh" > "$TMP/pins.sh"
 # shellcheck disable=SC1091
 source "$TMP/pins.sh"
-expect_fail uv_bootstrap_pin linux-i686
-uv_bootstrap_pin linux-x64 || fail 'lost the x64 uv pin'
-[[ "$UV_PIN_SHA256" =~ ^[a-f0-9]{64}$ ]] || fail 'x64 uv pin digest malformed'
-uv_bootstrap_pin linux-arm64 || fail 'lost the ARM64 uv pin'
-[[ "$UV_PIN_SHA256" =~ ^[a-f0-9]{64}$ ]] || fail 'ARM64 uv pin digest malformed'
+assert_generated_pin_matches_lock() {
+    local target="$1" expected_url expected_sha
+    uv_bootstrap_pin "$target" || fail "install.sh has no uv pin for $target"
+    read -r expected_url expected_sha < <(python3 - "$UPSTREAM/pm/lock.json" "$target" <<'PY'
+import json, sys
+row = json.load(open(sys.argv[1], encoding="utf-8"))["packages"]["uv"]["artifacts"][sys.argv[2]]
+print(row["url"], row["sha256"])
+PY
+    )
+    [[ "$UV_PIN_URL" == "$expected_url" && "$UV_PIN_SHA256" == "$expected_sha" ]] \
+        || fail "install.sh pin for $target differs from pm/lock.json"
+    [[ "$UV_PIN_SHA256" =~ ^[a-f0-9]{64}$ ]] || fail "$target uv digest malformed"
+}
+assert_generated_pin_matches_lock linux-i686
+assert_generated_pin_matches_lock linux-x64
+assert_generated_pin_matches_lock linux-arm64
+[[ "$UV_PIN_SHA256" == 4bb69cf95ed13f23713bb7bc09f241896ea0c75b7c557e615a20604b82f9c403 ]] \
+    || fail 'ARM64 uv digest changed from the v0.23.2 lock'
+uv_bootstrap_pin linux-x64
+[[ "$UV_PIN_SHA256" == f68d291c75783122dad58ab77def0e13f3233f358731db5d6d7e8715603b928f ]] \
+    || fail 'x64 uv digest changed from the v0.23.2 lock'
+expect_fail uv_bootstrap_pin linux-i686-musl
 
 sed -n '/^pin() {/,/^}/p' "$UPSTREAM/setup-hermes.sh" > "$TMP/setup-pin.sh"
 [[ -s "$TMP/setup-pin.sh" ]] || fail 'setup-hermes lock reader missing'
@@ -76,10 +123,25 @@ sed -n '/^pin() {/,/^}/p' "$UPSTREAM/setup-hermes.sh" > "$TMP/setup-pin.sh"
 source "$TMP/setup-pin.sh"
 lock="$UPSTREAM/pm/lock.json"
 target=linux-i686
-[[ -z "$(pin url)" && -z "$(pin sha256)" ]] || fail 'setup-hermes found an unpinned i686 uv artifact'
+[[ "$(pin url)" == 'https://github.com/astral-sh/uv/releases/download/0.13.5/uv-i686-unknown-linux-gnu.tar.gz' ]] \
+    || fail 'setup-hermes lost the verified i686 uv URL'
+[[ "$(pin sha256)" == f5713d6c05d77d01de9655270d713ba87ed45391752f489c80bbf1690bccc17c ]] \
+    || fail 'setup-hermes lost the verified i686 uv digest'
 target=linux-x64
 [[ -n "$(pin url)" && "$(pin sha256)" =~ ^[a-f0-9]{64}$ ]] || fail 'setup-hermes lost the x64 uv lock row'
 target=linux-arm64
 [[ -n "$(pin url)" && "$(pin sha256)" =~ ^[a-f0-9]{64}$ ]] || fail 'setup-hermes lost the ARM64 uv lock row'
 
-echo 'v0.23.2-bootstrap-abi: PASS (i686/x64/ARM64 fixtures; real host process ABI; no i686 pin fallback)'
+# The fail-closed path remains covered using an explicit lock fixture after
+# the real i686 row is added.
+python3 - "$UPSTREAM/pm/lock.json" "$TMP/lock-without-i686.json" <<'PY'
+import json, sys
+lock = json.load(open(sys.argv[1], encoding="utf-8"))
+lock["packages"]["uv"]["artifacts"].pop("linux-i686")
+json.dump(lock, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+lock="$TMP/lock-without-i686.json"
+target=linux-i686
+[[ -z "$(pin url)" && -z "$(pin sha256)" ]] || fail 'setup-hermes ignored the missing-pin fixture'
+
+echo 'v0.23.2-bootstrap-abi: PASS (i686/x64/ARM64 target fixtures; real host process ABI; lock-backed uv pins; fail-closed fixture)'
