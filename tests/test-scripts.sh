@@ -10,4 +10,5 @@ printf '%s\n' "$out" | grep -Fq 'preflight: PASS'
 "$ROOT/tests/test-signal-provenance.sh"
 "$ROOT/tests/test-signal-cli-integration.sh"
 "$ROOT/tests/test-v0232-runtime-builds.sh"
+"${PYTHON_UNDER_TEST:-python3}" "$ROOT/tests/test-v0232-wheel-reconcile.py"
 echo 'scripts: PASS (self-contained syntax, static, privacy and provenance tests; no i686 execution)'

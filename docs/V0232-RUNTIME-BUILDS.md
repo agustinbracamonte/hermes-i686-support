@@ -56,13 +56,34 @@ The script verifies SHA-256 and npm SHA-512 integrity, proves the regular wrappe
 
 Hermes PM currently depends on its managed Node package for pnpm. Until Node 26.12.1 is built, ELF32-verified, and pinned in the private staging lock, this work can cross-stage the pnpm WASM artifact itself but cannot claim a complete pnpm dependency closure or full PM install on i686.
 
+## Offline wheel/lock reconciliation
+
+`scripts/reconcile-v0232-wheelhouse.py` compares an exact target-resolved requirements export, the matching `uv.lock`, and an existing wheelhouse. It uses the supplied CPython interpreter's `pip debug --verbose` tags by default and rejects an interpreter whose pointer width or `sysconfig` platform is not Linux i686. It reports each package as `verified`, `no-compatible-wheel`, `compatible-wheel-not-present`, `wheel-not-in-lock`, `package-not-in-lock`, or `hash-mismatch`.
+
+Run it in the isolated i686 staging environment, after exporting the plan with the same interpreter and lock:
+
+~~~bash
+uv export --locked --offline --no-emit-project --no-annotate \
+  --format requirements-txt > /tmp/hermes-v0232-plan-i686.txt
+/path/to/cpython-3.14.9-i686/bin/python3.14 scripts/reconcile-v0232-wheelhouse.py \
+  --lock uv.lock \
+  --requirements /tmp/hermes-v0232-plan-i686.txt \
+  --wheelhouse /path/to/existing/verified-wheelhouse \
+  --python /path/to/cpython-3.14.9-i686/bin/python3.14 \
+  --output /tmp/hermes-v0232-wheel-reconciliation.json
+~~~
+
+The tool is read-only with respect to the lock and wheelhouse: it does not download, build, rename, or install artifacts. Its JSON report contains package names, wheel filenames and hashes, lock/plan fingerprints, counts, and target tag fingerprint; it omits absolute input paths. A nonzero exit means a wheel is missing, incompatible, unpinned, or has the wrong digest. A lock-matched prebuilt wheel can be counted as verified. Wheels built locally from a locked sdist still need staging build provenance and an explicit lock-integration policy; this tool does not mislabel a locally built wheel as a registry artifact.
+
+The 101-package plan, 92 reportedly verified wheels, nine reported gaps, and isolated `cffi`/`psutil` sync remain operator-supplied findings. This public work did not inspect or copy those files. The fixture tests exercise matching, missing-lock-row, missing-target-wheel and digest-mismatch results only; they are not evidence about Púlsar's wheelhouse.
+
 ## Checks run in this work session
 
 - CPython build script fetched v3.14.9 and verified the exact tag object, commit and tree. A second run reused the source checkpoint.
 - Node source tarball was downloaded from nodejs.org, matched the official SHASUMS256 entry, and the --prepare-only extraction/resume path passed twice using those verified bytes.
 - tests/test-v0232-runtime-builds.sh — pass: shell syntax, JOBS=2 rejection, bad Node archive hash rejection, ELF32/x64 fixtures, and checkpoint resume/fingerprint rejection.
+- python3 tests/test-v0232-wheel-reconcile.py — pass: three local-fixture cases cover i686 tag/hash matching, a missing target wheel, a changed digest, and refusal to infer target tags from this x86_64 host.
 - Both runtime scripts' --prepare-only paths passed with nonexistent compiler paths after source verification/extraction; repeated runs reused checkpoints. Their --preflight-only paths rejected the x86_64 ELF64 process before build.
-- Both build scripts' --preflight-only correctly failed on this x86_64 ELF64 process before attempting a build.
 - scripts/verify-v0232-pnpm-wasm.sh with the actual official npm tarballs — pass on Node v24.22.1, process.arch=x64; it ran pnpm 12.15.0 and completed an offline local-file install.
 - scripts/test-v0232-pnpm-wasm-pm-stage.sh — pass against the patched v0.23.2 checkout and the already downloaded WASM tarball. PM downloaded it from loopback, verified the pinned SHA-256, installed the store entry and ran the shared ELF scan; it did not execute Node or pnpm.
 - tests/test-v0232-patchset.sh — pass against a clean checkout of the exact Hermes commit. The ordered patch series applied and 103 focused PM core/install/doctor/store/downloader/pnpm tests passed; one macOS-only case was skipped on Linux.
@@ -75,4 +96,4 @@ These checks establish source, hash, PM staging, and host-side WASM behavior. Th
 2. Build CPython, then Node, serially; retain each result manifest and the source/system package records.
 3. Run verify-v0232-pnpm-wasm.sh --require-ia32 against the built Node. Capture memory use and check the offline install result.
 4. Have Púlsar validate those outputs in its staging environment and reconcile the Node pin into its real lock. No staging host was accessed by this public task.
-5. Reconcile the Púlsar report against its actual plan, lock, and existing wheelhouse offline. Do not retrieve the reported 92 wheels again; document any local source builds separately.
+5. Run the offline reconciler in Púlsar staging against its actual resolved plan, lock, and existing wheelhouse. Do not retrieve the reported 92 wheels again; resolve the nine gaps and document local source builds separately.

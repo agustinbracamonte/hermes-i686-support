@@ -33,7 +33,7 @@ Read `docs/INSTALL.md` first. The runtime command below is only for isolated sta
 
 The matrix in `docs/COMPATIBILITY.md` distinguishes recovered evidence from current execution and design-only guidance.
 
-For the v0.23.2 patch series and current evidence, see [`docs/V0232-IMPLEMENTATION-STATUS.md`](docs/V0232-IMPLEMENTATION-STATUS.md) and [`docs/V0232-RUNTIME-BUILDS.md`](docs/V0232-RUNTIME-BUILDS.md). The series is applied and tested in a disposable source archive with `tests/test-v0232-patchset.sh`; it includes process-ABI selection, generic ELF validation, verified uv 0.13.5 and the i686 pnpm WASM path. The runtime guide also documents serial CPython/Node builds and pnpm WASM verification.
+For the v0.23.2 patch series and current evidence, see [`docs/V0232-IMPLEMENTATION-STATUS.md`](docs/V0232-IMPLEMENTATION-STATUS.md) and [`docs/V0232-RUNTIME-BUILDS.md`](docs/V0232-RUNTIME-BUILDS.md). The series is applied and tested in a disposable source archive with `tests/test-v0232-patchset.sh`; it includes process-ABI selection, generic ELF validation, verified uv 0.13.5 and the i686 pnpm WASM path. The runtime guide also documents serial CPython/Node builds, pnpm WASM verification, and the offline wheel/lock reconciler.
 
 ## Evidence status
 

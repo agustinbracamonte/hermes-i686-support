@@ -55,7 +55,7 @@ The CPython source-build recipe now pins Git tag object `17acf00d155cb8536eca1c3
 
 The latest report supersedes the older 102-dependency estimate in `CODEX-HANDOFF-V0232.md`: the current plan selects 101 dependencies; 92/92 reported compatible wheels have been downloaded and verified in staging; nine have no compatible wheel for that plan. `cffi 2.1.1` and `psutil 7.2.2` reportedly passed an isolated offline sync but have not been integrated with the real lock. Púlsar also reports local i686 pins for uv 0.13.5, FFmpeg 9.0.1, ripgrep 15.2.0 and gh 2.97.0, plus local bootstrap/ABI fixes. None of those results is treated as reproduced by this public work.
 
-No wheel was re-downloaded, inspected, built, or added in this milestone. The counts, lock coverage, and `cffi`/`psutil` integration remain operator evidence pending offline lock reconciliation.
+No Púlsar wheel was re-downloaded, inspected, built, or added in this milestone. The offline reconciler is implemented and tested against synthetic fixtures only. The counts, lock coverage, and `cffi`/`psutil` integration remain operator evidence pending a run against Púlsar's actual lock and existing staging wheelhouse.
 
 ## Test evidence
 
@@ -80,7 +80,8 @@ Executed in this work session:
 - `scripts/build-cpython-v0232-i686.sh --prepare-only` — exit 0; exact CPython tag object/commit/tree verified; repeated invocation reused its source checkpoint.
 - `scripts/build-node-v0232-i686.sh --prepare-only` — exit 0; official Node source SHA verified and extraction checkpoint resumed. Both build scripts' `--preflight-only` reject this ELF64 x86_64 process before compiling.
 - `tests/test-v0232-runtime-builds.sh` — exit 0; syntax, serial-job rejection, bad archive hash, ELF32/x64 fixture, and checkpoint fingerprint coverage passed.
-- Both `--prepare-only` paths passed using nonexistent compiler paths and reused checkpoints; both `--preflight-only` paths correctly rejected this host's ELF64 process.
+- `python3 tests/test-v0232-wheel-reconcile.py` — exit 0; three synthetic-fixture cases cover lock hash/tag match, no lock row, no compatible wheel, digest mismatch, and rejection of this host as an i686 tag source.
+- Both `--prepare-only` paths passed using nonexistent compiler paths and reused checkpoints.
 
 | Check | Evidence label | Status |
 |---|---|---|
@@ -107,7 +108,7 @@ The host for this implementation is Linux x86_64. The test environment was built
 2. Run the pnpm WASM CLI and offline install with that Node using `--require-ia32`; measure memory on the target before accepting it for Púlsar.
 3. Add and verify the locally built Node artifact in the private staging lock, then test the full PM dependency closure there. Do not publish the binary in this public repository.
 4. Review the 14 remaining PM rows against official assets and digests; keep unsupported packages explicit.
-5. Reconcile Púlsar's current 101-dependency / 92-wheel / 9-unresolved report against the actual lock and existing wheelhouse offline; do not download those wheels again.
+5. Run the offline wheel/lock reconciler in Púlsar staging against the actual plan, lock, and existing wheelhouse; resolve the nine gaps without downloading the reported 92 wheels again.
 6. Continue Púlsar's private migration only in the separate repository described by `PRIVATE-INTEGRATION-SETUP.md`; this public work contains no private source or customization details.
 
 ## Review follow-up and boundaries
