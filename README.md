@@ -1,8 +1,8 @@
 # Hermes i686 Support
 
-Pinned, checksum-verified build guidance and scripts for running **Hermes Agent** on a 32-bit Debian/i386 userspace, including Raspberry Pi OS x86 installations where the kernel may report `x86_64`. No binary reproducibility claim is made.
+Pinned, checksum-verified build guidance and scripts for running **Hermes Agent** on a 32-bit Debian/i386 userspace, including Raspberry Pi OS x86 installations where the kernel may report `x86_64`. The repository also carries a small, version-pinned patchset for Hermes Agent v0.23.2. It does not contain a Hermes checkout or a complete i686 runtime.
 
-> This is a local preparation for a future public GitHub repository. It has no remote and has not been published.
+> The public repository contains generic architecture support only. Púlsar-specific adaptations and authenticated state belong in a separate private repository.
 
 ## Scope
 
@@ -10,6 +10,7 @@ Pinned, checksum-verified build guidance and scripts for running **Hermes Agent*
 - Use a private static OpenSSL prefix to avoid system OpenSSL ABI constraints.
 - Validate Python pointer width, native ELF objects, dynamic linkage and checksums.
 - Stage an Hermes install without modifying a running gateway.
+- Apply the v0.23.2 i686 ABI and ELF-validation patchset to the exact upstream commit.
 
 ## Non-goals
 
@@ -29,6 +30,8 @@ Read `docs/INSTALL.md` first. The runtime command below is only for isolated sta
 ```
 
 The matrix in `docs/COMPATIBILITY.md` distinguishes recovered evidence from current execution and design-only guidance.
+
+For the v0.23.2 patch and its current evidence, see [`docs/V0232-IMPLEMENTATION-STATUS.md`](docs/V0232-IMPLEMENTATION-STATUS.md). The patch is applied and tested in a disposable source archive with `tests/test-v0232-patchset.sh`; it does not add i686 artifact pins that are absent from upstream.
 
 ## Evidence status
 
