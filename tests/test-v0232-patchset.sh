@@ -19,8 +19,10 @@ mkdir "$TMP/source"
 git -C "$UPSTREAM" archive "$PIN" | tar -xf - -C "$TMP/source"
 (
     cd "$TMP/source"
-    git apply --check "$ROOT/patches/v0.23.2/0001-linux-i686-process-abi.patch"
-    git apply "$ROOT/patches/v0.23.2/0001-linux-i686-process-abi.patch"
+    for patch in "$ROOT"/patches/v0.23.2/[0-9][0-9][0-9][0-9]-*.patch; do
+        git apply --check "$patch"
+        git apply "$patch"
+    done
     git init -q
     git add -A
     bash -n scripts/install.sh setup-hermes.sh

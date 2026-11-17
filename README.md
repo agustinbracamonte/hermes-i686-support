@@ -31,7 +31,7 @@ Read `docs/INSTALL.md` first. The runtime command below is only for isolated sta
 
 The matrix in `docs/COMPATIBILITY.md` distinguishes recovered evidence from current execution and design-only guidance.
 
-For the v0.23.2 patch and its current evidence, see [`docs/V0232-IMPLEMENTATION-STATUS.md`](docs/V0232-IMPLEMENTATION-STATUS.md). The patch is applied and tested in a disposable source archive with `tests/test-v0232-patchset.sh`; it does not add i686 artifact pins that are absent from upstream.
+For the v0.23.2 patch series and current evidence, see [`docs/V0232-IMPLEMENTATION-STATUS.md`](docs/V0232-IMPLEMENTATION-STATUS.md). The series is applied and tested in a disposable source archive with `tests/test-v0232-patchset.sh`; it adds only the uv i686 artifact row whose release digest was verified locally.
 
 ## Evidence status
 
