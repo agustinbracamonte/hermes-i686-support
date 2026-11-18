@@ -37,11 +37,12 @@ command -v debootstrap >/dev/null 2>&1 || {
 mkdir -p "$ROOTFS"
 sudo debootstrap --arch=i386 --variant=minbase --include=ca-certificates,debian-archive-keyring \
   bullseye "$ROOTFS" "https://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT"
+sudo rm -f "$ROOTFS/etc/resolv.conf"
 sudo cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
 sudo tee "$ROOTFS/etc/apt/sources.list" >/dev/null <<EOF
 deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT bullseye main
-deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/$DEBIAN_SNAPSHOT bullseye-security updates/main
+deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/$DEBIAN_SNAPSHOT bullseye-security main
 EOF
 
 sudo mkdir -p "$ROOTFS/work/source" "$ROOTFS/work/build"
@@ -71,8 +72,8 @@ export LC_ALL=C
 test "$(dpkg --print-architecture)" = i386
 apt-get -o Acquire::Check-Valid-Until=false update
 apt-get -o Acquire::Check-Valid-Until=false --yes --no-install-recommends --download-only install \
-  build-essential ca-certificates clang-19="$CLANG_VERSION" curl git pkg-config \
-  gdbm-dev libbz2-dev libexpat1-dev libffi-dev libgdbm-dev liblzma-dev \
+  build-essential ca-certificates clang-19="$CLANG_VERSION" curl git openssl pkg-config python3 tar \
+  libbz2-dev libexpat1-dev libffi-dev libgdbm-compat-dev libgdbm-dev liblzma-dev \
   libncursesw5-dev libreadline-dev libsqlite3-dev libssl-dev uuid-dev \
   xz-utils zlib1g-dev
 
@@ -81,8 +82,8 @@ test -f "$clang_deb"
 actual_clang_sha=$(sha256sum "$clang_deb" | awk '{print $1}')
 test "$actual_clang_sha" = "$CLANG_SHA256"
 apt-get -o Acquire::Check-Valid-Until=false --yes --no-install-recommends --no-download install \
-  build-essential ca-certificates clang-19="$CLANG_VERSION" curl git pkg-config \
-  gdbm-dev libbz2-dev libexpat1-dev libffi-dev libgdbm-dev liblzma-dev \
+  build-essential ca-certificates clang-19="$CLANG_VERSION" curl git openssl pkg-config python3 tar \
+  libbz2-dev libexpat1-dev libffi-dev libgdbm-compat-dev libgdbm-dev liblzma-dev \
   libncursesw5-dev libreadline-dev libsqlite3-dev libssl-dev uuid-dev \
   xz-utils zlib1g-dev
 

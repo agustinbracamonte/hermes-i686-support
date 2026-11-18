@@ -110,7 +110,7 @@ The host for this implementation is Linux x86_64. The test environment was built
 
 ## Next engineering milestones
 
-PR #8 adds an owner-gated GitHub-hosted runtime build using the signed Debian snapshot. It has no token permissions, secrets, or binary uploads and refuses non-hosted runners. The workflow has not run yet, so native runtime evidence remains pending.
+PR #8 adds an owner-gated GitHub-hosted runtime build using the signed Debian snapshot. It requests empty token permissions; the runner reports implicit metadata:read, which the workflow never reads or passes. It uses no configured secrets or binary uploads and refuses non-hosted runners. The first hosted run verified the snapshot signature and bootstrapped i386, then found an incorrect security component plus a nonexistent gdbm-dev package before compiling. The corrected run and all native runtime evidence remain pending.
 
 1. Run the CPython 3.14.9 and Node 26.12.1 recipes on isolated ELF32/i686 staging with the documented compiler and system dependencies; capture interpreter/runtime ELF hashes and smoke results.
 2. Run the pnpm WASM CLI and offline install with that Node using `--require-ia32`; measure memory on the target before accepting it for Púlsar.
