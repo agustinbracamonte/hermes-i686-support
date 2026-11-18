@@ -57,6 +57,19 @@ This was a metadata-only review of the exact lock pins and official release/regi
 
 These rows remain unsupported on i686 until a compatible artifact is published, built and verified for this target, or a package-specific port is reviewed. Existing x64 hashes must not be copied into the i686 rows.
 
+### FFmpeg source-build candidate (2026-11-18)
+
+Public metadata provides a source candidate but no i686 binary or i686 checksum:
+
+- The official `FFmpeg/FFmpeg` annotated tag `n9.0.1` has tag-object SHA-1 `501bb49457b9dfb25d6a208832e0a6e6cd53108d`; GitHub reports a valid tag signature and the tag points to commit `bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa`.
+- The BtbN x64 GPL release asset is named `ffmpeg-n9.0.1-11-ge47273f4d9-linux64-gpl-9.0.tar.xz`. Its suffix resolves to upstream FFmpeg commit `e47273f4d9227152dcbf543cebaf9e2430ddbcc4`, which GitHub compares as 11 commits ahead of the signed `n9.0.1` tag. The follow-up commit itself is unsigned; the release filename and x64 checksum do not authenticate an i686 build.
+- Recommended source pin for a first compatibility build: the exact `e47273f4d9227152dcbf543cebaf9e2430ddbcc4` commit, because it matches the source lineage of the existing x64 lock artifact. This is a commit pin, not a signed-source claim. A security policy requiring signed upstream tags should instead use the signed tag and accept the 11-commit difference from the x64 build.
+- No source archive or binary was downloaded and no build was run. The i686 lock row and digest remain absent.
+
+The proposed reproducible build is serial (`make -j1`) in an isolated Debian 11 i386 rootfs, with the exact source commit/tree, package versions, configure arguments and final artifact digest recorded. The expected toolchain is Bullseye GCC 10.2, GNU Make 4.3, `pkg-config` 0.29.2 and NASM 2.15.05. A minimal Hermes-oriented feature set to validate is GPL-enabled H.264 (`libx264`), Opus, MP3 (`libmp3lame`), native AAC, and X11 capture (`libxcb`); no `--enable-nonfree`. The build must establish how external i386 libraries are delivered and resolve every `DT_NEEDED` entry against the target Debian 11 environment. Treat the resulting binary as GPL and review redistribution obligations before packaging it.
+
+Acceptance requires ELF32/little-endian/EM_386, Bullseye-compatible GLIBC requirements, resolved i386 library dependencies, `ffmpeg`/`ffprobe` version checks, low-resolution Opus/AAC/H.264 encode/decode smoke tests, and `x11grab` against a synthetic Xvfb display. Confirm native i686 process identity separately if execution used an emulator. Only after these checks should the generated artifact receive a PM lock row and SHA-256. No such build or runtime evidence exists yet.
+
 ### Optional PM defaults without i686 artifacts
 
 The pinned Package Manager declares Chromium and `cua-driver` as optional default packages. The reviewed official release metadata has no Linux/i686 artifact for either. The generic patch series now records explicit `linux-i686` gaps for both packages: `default_packages()` skips them, and `doctor` reports them as unavailable with the source reason. This avoids treating a missing artifact as an install attempt while preserving their existing x64 and ARM64 selection and pins. Focused regression coverage checks the default closure has no target without a locked artifact and verifies both supported architectures remain selected. This does not provide browser or computer-use driver functionality on i686.
