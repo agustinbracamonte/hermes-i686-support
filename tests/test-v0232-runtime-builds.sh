@@ -82,6 +82,7 @@ grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-b
 grep -Fq 'node-cxx-header-selection.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.trace' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'C++ standard-library selection trace (Bullseye vector header missing)' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'v0232_node_trace_has_gcc10_vector "$trace"' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'cat "$trace" >&2' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq '#include <vector>' "$ROOT/tests/fixtures/node-source-location.cpp"
 grep -Fq 'std::vector<int> copy = values' "$ROOT/tests/fixtures/node-source-location.cpp"
@@ -183,6 +184,21 @@ for args in (
 ):
     compiler(*args)
 PY
+
+header_root="$TMP/debian-header-root"
+mkdir -p "$header_root/usr/lib/gcc/i686-linux-gnu/10" "$header_root/usr/include/c++/10"
+: >"$header_root/usr/include/c++/10/vector"
+gcc10_trace="$TMP/gcc10-header.trace"
+printf '. %s\n' "$header_root/usr/lib/gcc/i686-linux-gnu/10/../../../../include/c++/10/vector" >"$gcc10_trace"
+v0232_node_trace_has_gcc10_vector "$gcc10_trace" "$header_root/usr/include/c++/10/vector"
+gcc11_trace="$TMP/gcc11-header.trace"
+mkdir -p "$header_root/toolchain/usr/include/c++/11"
+: >"$header_root/toolchain/usr/include/c++/11/vector"
+printf '. %s\n' "$header_root/toolchain/usr/include/c++/11/vector" >"$gcc11_trace"
+if v0232_node_trace_has_gcc10_vector "$gcc11_trace" "$header_root/usr/include/c++/10/vector"; then
+  echo 'header trace accepted a GCC 11 vector header as Bullseye GCC 10' >&2
+  exit 1
+fi
 
 [[ "$(v0232_node_check_compiler_pair "$TMP/clang19" "$TMP/clangxx19")" == 'clang 19.1.7 i686-unknown-linux-gnu' ]]
 [[ "$(v0232_node_check_compiler_pair "$TMP/gcc13" "$TMP/gxx13")" == 'gcc 13.2.1 i686-linux-gnu' ]]

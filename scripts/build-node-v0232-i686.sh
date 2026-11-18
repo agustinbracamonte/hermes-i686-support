@@ -251,6 +251,7 @@ CXX_HEADER_FLAGS=(-isystem "$CXX_SOURCE_LOCATION_OVERLAY")
 verify_cxx_header_selection() {
   local trace="$RESULTS/node-cxx-header-selection.trace"
   local report="$RESULTS/node-cxx-header-selection.txt"
+  local vector_header vector_header_resolved
   if ! printf '#include <source_location>\n#include <vector>\n' | \
       "$CXX_BIN" -std=c++20 -H "${CXX_HEADER_FLAGS[@]}" -x c++ -fsyntax-only - \
       >/dev/null 2>"$trace"; then
@@ -260,18 +261,20 @@ verify_cxx_header_selection() {
   fi
   grep -Fq "$CXX_SOURCE_LOCATION_OVERLAY/source_location" "$trace" || \
     { printf 'C++ standard-library selection trace (source_location overlay missing):\n' >&2; cat "$trace" >&2; v0232_die "Clang did not select the pinned source_location-only overlay"; }
-  grep -Fq '/usr/include/c++/10/vector' "$trace" || \
+  v0232_node_trace_has_gcc10_vector "$trace" || \
     { printf 'C++ standard-library selection trace (Bullseye vector header missing):\n' >&2; cat "$trace" >&2; v0232_die "Clang did not retain Bullseye GCC 10 standard-library headers"; }
   if grep -Fq "$CXX_HEADERS_ROOT/usr/include/c++/11/" "$trace"; then
     printf 'C++ standard-library selection trace (unexpected GCC 11 headers):\n' >&2
     cat "$trace" >&2
     v0232_die "Clang selected a GCC 11 standard-library header outside the source_location overlay"
   fi
+  vector_header=$(awk '$NF ~ /\/vector$/ { print $NF; exit }' "$trace")
+  vector_header_resolved=$(readlink -f -- "$vector_header")
   {
     printf 'source_location_overlay=%s/source_location\n' "$CXX_SOURCE_LOCATION_OVERLAY"
-    printf 'bullseye_standard_library_header=/usr/include/c++/10/vector\n'
+    printf 'bullseye_standard_library_header=%s\n' "$vector_header"
+    printf 'bullseye_standard_library_header_resolved=%s\n' "$vector_header_resolved"
     grep -F "$CXX_SOURCE_LOCATION_OVERLAY/source_location" "$trace"
-    grep -F '/usr/include/c++/10/vector' "$trace"
   } >"$report.tmp"
   mv -f -- "$report.tmp" "$report"
   cat "$report"
