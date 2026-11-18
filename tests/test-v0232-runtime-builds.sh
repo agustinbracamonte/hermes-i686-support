@@ -67,7 +67,10 @@ grep -Fq 'readonly CXX_HEADERS_ARCH=i386' "$ROOT/scripts/build-node-v0232-i686.s
 grep -Fq 'readonly CXX_HEADERS_SHA256=8402d1e5e1f09308fd5273b5554476c8ee6fc55c984ef2fe55f46ef7b117f58c' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'dpkg-deb -x "$CXX_HEADERS_DEB" "$temporary"' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'diff -qr "$CXX_HEADERS_ROOT" "$temporary"' "$ROOT/scripts/build-node-v0232-i686.sh"
-grep -Fq 'CXX_HEADER_FLAGS=(-nostdinc++' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'CXX_HEADER_FLAGS=(-isystem "$CXX_SOURCE_LOCATION_OVERLAY")' "$ROOT/scripts/build-node-v0232-i686.sh"
+! grep -Fq 'CXX_HEADER_FLAGS=(-nostdinc++' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'source-location-overlay' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'verify_cxx_header_selection' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'CXX_RUNTIME_PACKAGE_VERSION' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'GLIBCXX_3.4.28' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'source-location-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
@@ -76,6 +79,9 @@ sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
 sed -n '/^install_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
 grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-cxx-header-selection.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq '#include <vector>' "$ROOT/tests/fixtures/node-source-location.cpp"
+grep -Fq 'std::vector<int> copy = values' "$ROOT/tests/fixtures/node-source-location.cpp"
 grep -Fq 'sizeof(std::source_location) == sizeof(void*)' "$ROOT/tests/fixtures/node-source-location.cpp"
 grep -Fq 'std::source_location::current()' "$ROOT/tests/fixtures/node-source-location.cpp"
 
