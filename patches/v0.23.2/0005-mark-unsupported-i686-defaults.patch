@@ -1,0 +1,60 @@
+diff --git a/pm/packages.py b/pm/packages.py
+index 54a5ed1b32..240ec0bcc2 100644
+--- a/pm/packages.py
++++ b/pm/packages.py
+@@ -1105,7 +1105,8 @@ class CuaDriver(BinaryPackage):
+     # Computer use's only OS path, so the default install carries it.
+     default = True
+     gaps = {**{target: "cua-driver does not publish a musl build" for target in MUSL_TARGETS},
+-            "linux-arm64-bionic": "cua-driver does not publish an Android build"}
++            "linux-arm64-bionic": "cua-driver does not publish an Android build",
++            "linux-i686": "upstream does not publish Linux i686 binaries"}
+     binary_rel = {
+         "darwin-arm64": "CuaDriver.app/Contents/MacOS/cua-driver",
+         "darwin-x64": "CuaDriver.app/Contents/MacOS/cua-driver",
+@@ -1175,6 +1176,7 @@ class Chromium(Package):
+     # Neither Chrome-for-Testing nor Playwright's mirror builds for Android.
+     gaps = {
+         "linux-arm64-bionic": "no Chromium build for Android/Termux",
++        "linux-i686": "Chrome for Testing does not publish Linux i686 builds",
+         **{target: "Playwright/Chrome-for-Testing publishes no musl build" for target in MUSL_TARGETS},
+     }
+     emulated_arch_targets = frozenset({"win32-arm64"})
+diff --git a/tests/pm/test_chromium.py b/tests/pm/test_chromium.py
+index c4a05d3a32..3ac2a5957b 100644
+--- a/tests/pm/test_chromium.py
++++ b/tests/pm/test_chromium.py
+@@ -57,3 +57,20 @@ def test_locked_chromium_is_patched_chrome_for_testing():
+         url = lock.artifacts(package.name, target)[0]["url"]
+         assert url == package.fetch_url(version, target)
+         assert "/builds/cft/" in url
++
++
++def test_i686_chromium_gap_does_not_change_x64_or_arm64_defaults():
++    from pm.defaults import default_packages
++
++    lock = Lockfile(lockfile_path())
++    names = lock.names()
++    package = Chromium()
++    assert package.missing_reason("linux-i686") == \
++        "Chrome for Testing does not publish Linux i686 builds"
++    assert "chromium" not in default_packages(
++        names, target="linux-i686", declined_names=frozenset())
++    for target in ("linux-x64", "linux-arm64"):
++        assert package.missing_reason(target) is None
++        assert lock.artifacts("chromium", target)
++        assert "chromium" in default_packages(
++            names, target=target, declined_names=frozenset())
+diff --git a/tests/pm/test_install_default_closure.py b/tests/pm/test_install_default_closure.py
+index 26b8a3bfa8..e3e82b1272 100644
+--- a/tests/pm/test_install_default_closure.py
++++ b/tests/pm/test_install_default_closure.py
+@@ -156,3 +156,8 @@ def test_default_install_carries_the_computer_use_driver_wherever_it_builds():
+         assert ("cua-driver" in defaults) == (driver.missing_reason(target) is None), target
+     assert "cua-driver" not in default_packages(
+         lock.names(), target="linux-x64", declined_names=frozenset({"cua-driver"}))
++    driver = pm.cli.get_package("cua-driver")
++    assert driver.missing_reason("linux-i686") == "upstream does not publish Linux i686 binaries"
++    for target in ("linux-x64", "linux-arm64"):
++        assert driver.missing_reason(target) is None
++        assert lock.artifacts("cua-driver", target)
