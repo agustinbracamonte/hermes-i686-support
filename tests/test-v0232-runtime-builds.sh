@@ -14,6 +14,8 @@ bash -n "$ROOT/scripts/build-cpython-v0232-i686.sh" \
 "$ROOT/scripts/build-cpython-v0232-i686.sh" --help >/dev/null
 "$ROOT/scripts/build-node-v0232-i686.sh" --help >/dev/null
 grep -Fq -- '--openssl-no-asm' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq -- '-msse2' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'v0232_require_cpu_feature sse2' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'CHROOT_STATUS=$?' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 
@@ -61,6 +63,14 @@ PY
 
 source "$ROOT/scripts/v0232-i686-build-common.sh"
 source "$ROOT/scripts/v0232-node-toolchain.sh"
+printf 'processor : 0\nflags : fpu sse2 ssse3\n' >"$TMP/cpuinfo-sse2"
+v0232_require_cpu_feature sse2 "$TMP/cpuinfo-sse2"
+printf 'processor : 0\nflags : fpu ssse3\n' >"$TMP/cpuinfo-no-sse2"
+set +e
+output=$( (v0232_require_cpu_feature sse2 "$TMP/cpuinfo-no-sse2") 2>&1 )
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'requires CPU feature '\''sse2'\'''* ]]
 [[ "$(v0232_elf_identity "$TMP/i686.elf")" == 'ELF32 little-endian Intel 80386' ]]
 if v0232_elf_identity "$TMP/x64.elf" >/dev/null; then
   echo 'ELF guard accepted a 64-bit fixture' >&2
