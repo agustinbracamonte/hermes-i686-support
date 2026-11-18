@@ -23,6 +23,19 @@ grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 patch_fixture="$TMP/node-source"
 mkdir -p "$patch_fixture/deps/zlib"
 cat >"$patch_fixture/deps/zlib/zlib.gyp" <<'GYP'
+            ['target_arch in "ia32 x64" and OS!="ios"', {
+              'defines': [ 'INFLATE_CHUNK_SIMD_SSE2' ],
+              'conditions': [
+                ['target_arch=="x64"', {
+                  'defines': [ 'INFLATE_CHUNK_READ_64LE' ],
+                }],
+              ],
+            }],
+            ['target_arch in "ia32 x64" and OS!="ios"', {
+              'dependencies': [ 'zlib_data_chunk_simd' ],
+              'sources': [ '<(ZLIB_ROOT)/slide_hash_simd.h' ]
+            }],
+              ],
               'defines': [ 'DEFLATE_SLIDE_HASH_SSE2' ],
               'conditions': [
                 ['target_arch=="x64"', {
@@ -34,7 +47,7 @@ patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
 grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
-grep -Fq "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp"
+[[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
 
