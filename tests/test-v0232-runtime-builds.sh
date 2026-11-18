@@ -61,6 +61,18 @@ grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fi
 grep -Fq "'libraries': [ '-latomic' ]" "$patch_fixture/deps/openssl/openssl.gyp"
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
+grep -Fq 'readonly CXX_HEADERS_PACKAGE=libstdc++-11-dev' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'readonly CXX_HEADERS_VERSION=11.3.0-12' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'readonly CXX_HEADERS_ARCH=i386' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'readonly CXX_HEADERS_SHA256=8402d1e5e1f09308fd5273b5554476c8ee6fc55c984ef2fe55f46ef7b117f58c' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'dpkg-deb -x "$CXX_HEADERS_DEB" "$temporary"' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'diff -qr "$CXX_HEADERS_ROOT" "$temporary"' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'CXX_HEADER_FLAGS=(-nostdinc++' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'CXX_RUNTIME_PACKAGE_VERSION' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'GLIBCXX_3.4.28' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'source-location-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'sizeof(std::source_location) == sizeof(void*)' "$ROOT/tests/fixtures/node-source-location.cpp"
+grep -Fq 'std::source_location::current()' "$ROOT/tests/fixtures/node-source-location.cpp"
 
 set +e
 output=$(GITHUB_ACTIONS=false RUNNER_ENVIRONMENT=self-hosted RUNNER_ARCH=X64 \
