@@ -1,11 +1,51 @@
 #!/usr/bin/env bash
 # Verify the official uv 0.13.5 i686 asset against its release checksum and
-# the pinned Hermes v0.23.2 lock row. This script never executes the binary.
+# the pinned Hermes v0.23.2 lock row. Static mode never executes the binary;
+# --runtime executes it only after proving this shell is a native ELF32 process.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-UPSTREAM=${1:?usage: verify-v0232-uv-i686.sh PATCHED_HERMES_V0232_CHECKOUT}
+MODE=static
+usage() {
+    cat <<'HELP'
+Usage: verify-v0232-uv-i686.sh [--static-only|--runtime] PATCHED_HERMES_V0232_CHECKOUT
+
+Static mode verifies the official checksum sidecar, archive SHA-256, lock pin,
+bootstrap pins and ELF32/EM_386 headers without executing uv. Runtime mode first
+requires this script's shell to be a 32-bit ELF32/EM_386 process, then runs the
+verified uv/uvx binaries in an isolated temporary cache and checks version 0.13.5.
+
+Set UV_I686_ARCHIVE to reuse an already downloaded archive; the official checksum
+sidecar is still fetched and compared. Runtime mode is intended for native i686
+staging and is not evidence of execution on x86_64.
+HELP
+}
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+    usage
+    exit 0
+elif [[ "${1:-}" == --runtime ]]; then
+    MODE=runtime
+    shift
+elif [[ "${1:-}" == --static-only ]]; then
+    shift
+fi
+UPSTREAM=${1:?usage: verify-v0232-uv-i686.sh [--static-only|--runtime] PATCHED_HERMES_V0232_CHECKOUT}
 PIN="ae2a81ccc00e9b7c06301523e5bb09608397149c"
+if [[ "$MODE" == runtime ]]; then
+    if ! command -v readelf >/dev/null 2>&1 || ! command -v getconf >/dev/null 2>&1; then
+        echo 'runtime mode requires readelf and getconf' >&2
+        exit 1
+    fi
+    executable="/proc/$$/exe"
+    [[ -e "$executable" ]] || { echo "cannot identify runtime shell at $executable" >&2; exit 1; }
+    class=$(readelf -h "$executable" | awk '/Class:/ { print $2; exit }')
+    machine=$(readelf -h "$executable" | awk '/Machine:/ { sub(/^[[:space:]]*Machine:[[:space:]]*/, ""); print; exit }')
+    bits=$(getconf LONG_BIT)
+    [[ "$class" == ELF32 && "$machine" == 'Intel 80386' && "$bits" == 32 ]] || {
+        echo "runtime must run in an i686 userspace process (saw $class $machine, LONG_BIT=$bits; uname is ignored)" >&2
+        exit 1
+    }
+fi
 [[ -d "$UPSTREAM/.git" || -f "$UPSTREAM/.git" ]] || { echo 'input is not a Git checkout' >&2; exit 1; }
 [[ "$(git -C "$UPSTREAM" rev-parse HEAD)" == "$PIN" ]] || { echo "input must be exact commit $PIN" >&2; exit 1; }
 
@@ -68,4 +108,23 @@ for value in sys.argv[1:]:
 PY
 
 python3 "$UPSTREAM/scripts/gen-bootstrap-pins.py" --check
-printf 'uv-0.13.5-linux-i686: PASS (release sidecar, archive SHA-256, uv/uvx ELF32; binary not executed)\n'
+if [[ "$MODE" == runtime ]]; then
+    uv_bin="$TMP/extracted/uv-i686-unknown-linux-gnu/uv"
+    uvx_bin="$TMP/extracted/uv-i686-unknown-linux-gnu/uvx"
+    uv_version=$(UV_CACHE_DIR="$TMP/cache" "$uv_bin" --version 2>&1)
+    uvx_version=$(UV_CACHE_DIR="$TMP/cache" "$uvx_bin" --version 2>&1)
+    grep -Eq '(^|[[:space:]])0\.13\.5($|[[:space:]])' <<<"$uv_version" || {
+        echo "uv returned an unexpected version: $uv_version" >&2
+        exit 1
+    }
+    grep -Eq '(^|[[:space:]])0\.13\.5($|[[:space:]])' <<<"$uvx_version" || {
+        echo "uvx returned an unexpected version: $uvx_version" >&2
+        exit 1
+    }
+    UV_CACHE_DIR="$TMP/cache" "$uv_bin" cache dir >/dev/null
+    UV_CACHE_DIR="$TMP/cache" "$uvx_bin" --help >/dev/null
+    printf 'uv-0.13.5-linux-i686: PASS (native ELF32 execution; uv=%s; uvx=%s)\n' \
+        "$uv_version" "$uvx_version"
+else
+    printf 'uv-0.13.5-linux-i686: PASS (release sidecar, archive SHA-256, uv/uvx ELF32; execution NOT RUN)\n'
+fi
