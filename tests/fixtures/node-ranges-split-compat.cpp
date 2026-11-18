@@ -11,7 +11,8 @@ int main() {
   bool console = false;
   bool http = false;
   for (const auto& entry : entries) {
-    std::string destination(entry.begin(), entry.end());
+    std::string destination;
+    for (char character : entry) destination.push_back(character);
     if (destination == "stderr") {
       console = true;
     } else if (destination == "http") {

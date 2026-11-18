@@ -125,7 +125,7 @@ grep -Fq 'return OwnedVector<T>(std::unique_ptr<T[]>(new T[size]), size);' \
   "$patch_fixture/deps/v8/src/base/vector.h"
 grep -Fq 'return std::unique_ptr<CharT[]>(new CharT[length]);' \
   "$patch_fixture/deps/v8/src/strings/owning-external-string-resource.h"
-grep -Fq 'std::string destination(entry.begin(), entry.end());' \
+grep -Fq 'for (char character : entry) destination.push_back(character);' \
   "$patch_fixture/src/node_options.cc"
 ! grep -Fq 'entry.data(), entry.size()' "$patch_fixture/src/node_options.cc"
 ! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
