@@ -130,8 +130,8 @@ cat >"$patch_fixture/deps/v8/src/api/api.cc" <<'CPP'
 
 std::string SourceLocation::ToString() const {
   if (!*this) return {};
-  return (std::ostringstream{} << Function() << '@' << FileName() << ':'
-                               << Line())
+  return (std::ostringstream{} << loc_.function_name() << '@'
+                               << loc_.file_name() << ':' << loc_.line())
       .str();
 }
 
@@ -180,6 +180,9 @@ grep -Fq 'return __builtin_bit_cast(Dest, source);' "$patch_fixture/deps/v8/src/
 ! grep -Fq 'return std::bit_cast<Dest, Source>(source);' "$patch_fixture/deps/v8/src/base/macros.h"
 grep -Fq 'defined(__i386__) && defined(__clang__)' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq 'std::ostringstream stream;' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'stream << loc_.function_name()' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'loc_.file_name()' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'loc_.line()' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq 'return stream.str();' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq '#else' "$patch_fixture/deps/v8/src/api/api.cc"
 ! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
