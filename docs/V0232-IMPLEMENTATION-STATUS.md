@@ -1,6 +1,6 @@
 # Hermes Agent v0.23.2 i686 implementation status
 
-Updated 2026-11-18. Current checkpoint: PR #8 run #16 is terminal; CPython i686 passed, Node stopped on Bullseye GCC 10 `split_view` API differences. A local compatibility patch is under review. The operator reports Actions minutes unavailable until December, so hosted runs are paused. This is the public, generic compatibility workstream. It does not include a Hermes source checkout, private Púlsar code, credentials, sessions, wheels, or binaries.
+Updated 2026-11-18. Current checkpoint: PR #11 is open and unmerged on top of PR #9. After PR #8 run #16 exposed Bullseye GCC 10 `split_view` API differences, the exact-source Node patch passed apply/reverse checks and the regression fixture compiled with GCC 10.2.1-6 `-m32` as ELF32/EM_386; that fixture could not be executed on this x86_64 kernel. No follow-up hosted build has run. The operator reports no GitHub Actions minutes until December, so hosted validation is paused. CPython has hosted ELF32 smoke evidence; Node, npm, and pnpm remain unverified on i686. This is the public, generic compatibility workstream. It does not include a Hermes source checkout, private Púlsar code, credentials, sessions, wheels, or binaries.
 
 ## Pinned source
 
