@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/v0232-i686-build-common.sh"
 source "$SCRIPT_DIR/v0232-node-toolchain.sh"
 
 readonly VERSION=26.12.1
-readonly I686_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-zlib-sse2.patch"
+readonly I686_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-build-fixes.patch"
 readonly I686_PATCH_SHA256=$(v0232_sha256 "$I686_PATCH")
 readonly SOURCE_URL=https://nodejs.org/dist/v26.12.1/node-v26.12.1.tar.xz
 readonly SOURCE_SHA256=053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c
@@ -131,16 +131,16 @@ if [[ "$MODE" == prepare ]]; then
   exit 0
 fi
 
-apply_i686_zlib_patch() {
+apply_i686_build_patches() {
   if patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$SOURCE" <"$I686_PATCH" >/dev/null 2>&1; then
-    v0232_log "Node i686 zlib patch is already applied"
+    v0232_log "Node i686 build patches are already applied"
     return 0
   fi
   patch --silent --batch --forward --fuzz=0 -p1 -d "$SOURCE" <"$I686_PATCH"
 }
 
 PATCH_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$I686_PATCH_SHA256")
-v0232_checkpoint "$STATE" node-i686-patch "$PATCH_FINGERPRINT" "$SOURCE/deps/zlib/zlib.gyp" apply_i686_zlib_patch
+v0232_checkpoint "$STATE" node-i686-build-patches "$PATCH_FINGERPRINT" "$SOURCE/deps/openssl/openssl.gyp" apply_i686_build_patches
 
 NODE_PYTHON="$CPYTHON_PREFIX/bin/python3.14"
 [[ -x "$NODE_PYTHON" ]] || v0232_die "build CPython 3.14.9 i686 first; missing $NODE_PYTHON"
