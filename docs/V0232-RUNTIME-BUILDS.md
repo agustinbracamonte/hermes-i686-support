@@ -74,6 +74,8 @@ Patch `patches/node-v26.12.1-i686-ranges-compat.patch` copies each `std::ranges:
 
 The operator reports GitHub Actions minutes are unavailable until December. No new or repeated Actions run will be started before then. The next hosted check is the first i386 build attempt against this ranges patch after the budget returns.
 
+The current workflow triggers only for pull requests targeting `codex/v0232-node-clang-19`. PR #11 targets PR #9's `codex/v0232-cpython-linux-compiler-guard` branch, so it is intentionally outside that trigger and has no Actions run. After the operator's budget returns, update the trigger or create a dedicated validation PR for the complete stack before requesting the next hosted build.
+
 ## pnpm 12.15.0 on i686
 
 The regular npm package pnpm@12.15.0 is not a pure-JavaScript CLI. Its bin/pnpm.mjs wrapper downloads and launches a separate native pnpm executable. With COREPACK_ENABLE_NETWORK=0 and an empty temporary HOME, it fails with the explicit message that the native binary cannot be downloaded.
