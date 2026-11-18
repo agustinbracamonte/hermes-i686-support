@@ -1,6 +1,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <span>
 #include <utility>
@@ -18,8 +19,15 @@ struct MemorySpan {
   template <typename Iterator>
   MemorySpan(Iterator first, std::size_t count)
       : data(std::to_address(first)), size(count) {}
-  T* begin() const { return data; }
-  T* end() const { return size == 0 ? data : data + size; }
+  bool empty() const { return size == 0; }
+  T* begin() const {
+    if (empty()) std::abort();
+    return data;
+  }
+  T* end() const {
+    if (empty()) std::abort();
+    return data + size;
+  }
   T* data = nullptr;
   std::size_t size = 0;
 };
@@ -39,6 +47,9 @@ class Binary {
 #if defined(HERMES_FORCE_NODE_I686_V8_MEMORY_SPAN_COMPAT)
     return fromBytes(span.data(), span.size());
 #else
+    if (span.empty()) {
+      return Binary(std::make_shared<std::vector<uint8_t>>());
+    }
     return Binary(
         std::make_shared<std::vector<uint8_t>>(
             v8::MemorySpan<const uint8_t>(span.begin(), span.size()).begin(),
@@ -46,9 +57,11 @@ class Binary {
 #endif
   }
   static Binary fromSpan(v8::MemorySpan<const uint8_t> span) {
-    auto bytes = std::make_shared<std::vector<uint8_t>>();
-    if (span.size != 0) bytes->assign(span.data, span.data + span.size);
-    return Binary(bytes);
+    if (span.empty()) {
+      return Binary(std::make_shared<std::vector<uint8_t>>());
+    }
+    return Binary(
+        std::make_shared<std::vector<uint8_t>>(span.begin(), span.end()));
   }
 
   const std::vector<uint8_t>& bytes() const { return *bytes_; }

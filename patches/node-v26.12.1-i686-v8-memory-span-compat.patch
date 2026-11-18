@@ -1,6 +1,6 @@
 --- a/deps/v8/src/inspector/string-util.h
 +++ b/deps/v8/src/inspector/string-util.h
-@@ -54,4 +54,16 @@
+@@ -54,4 +54,19 @@
    static Binary fromBase64(const String& base64, bool* success);
 +#if defined(__i386__) && defined(__linux__)
 +  static Binary fromBytes(const uint8_t* data, size_t size) {
@@ -14,9 +14,18 @@
 +#if defined(__i386__) && defined(__linux__)
 +    return fromBytes(span.data(), span.size());
 +#else
++    if (span.empty()) {
++      return Binary(std::make_shared<std::vector<uint8_t>>());
++    }
      return fromSpan(v8::MemorySpan<const uint8_t>(span.begin(), span.size()));
 +#endif
    }
+@@ -58,2 +73,5 @@
+   static Binary fromSpan(v8::MemorySpan<const uint8_t> span) {
++    if (span.empty()) {
++      return Binary(std::make_shared<std::vector<uint8_t>>());
++    }
+     return Binary(
 --- a/deps/v8/src/inspector/v8-debugger-agent-impl.cc
 +++ b/deps/v8/src/inspector/v8-debugger-agent-impl.cc
 @@ -1248,4 +1248,9 @@
