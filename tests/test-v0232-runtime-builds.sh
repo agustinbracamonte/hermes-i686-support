@@ -24,7 +24,7 @@ grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 patch_fixture="$TMP/node-source"
 mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl" \
   "$patch_fixture/deps/v8/src/base" "$patch_fixture/deps/v8/src/strings" \
-  "$patch_fixture/src"
+  "$patch_fixture/src/tracing" "$patch_fixture/src"
 cat >"$patch_fixture/src/node_options.cc" <<'CPP'
   inspect_publish_uid.console = false;
   inspect_publish_uid.http = false;
@@ -40,6 +40,17 @@ cat >"$patch_fixture/src/node_options.cc" <<'CPP'
     }
   }
 CPP
+for tracing_file in agent_legacy.cc agent_perfetto.cc; do
+  cat >"$patch_fixture/src/tracing/$tracing_file" <<'CPP'
+
+  std::set<std::string> categories_set;
+  for (const auto& s : parts) {
+    categories_set.emplace(std::string(s.data(), s.size()));
+  }
+
+  tracing_file_writer_ =
+CPP
+done
 cat >"$patch_fixture/deps/zlib/zlib.gyp" <<'GYP'
             ['target_arch in "ia32 x64" and OS!="ios"', {
               'defines': [ 'INFLATE_CHUNK_SIMD_SSE2' ],
@@ -128,7 +139,18 @@ grep -Fq 'return std::unique_ptr<CharT[]>(new CharT[length]);' \
 grep -Fq 'for (char character : entry) destination.push_back(character);' \
   "$patch_fixture/src/node_options.cc"
 ! grep -Fq 'entry.data(), entry.size()' "$patch_fixture/src/node_options.cc"
+for tracing_file in agent_legacy.cc agent_perfetto.cc; do
+  grep -Fq 'for (char character : s) category.push_back(character);' \
+    "$patch_fixture/src/tracing/$tracing_file"
+  grep -Fq 'categories_set.emplace(std::move(category));' \
+    "$patch_fixture/src/tracing/$tracing_file"
+  ! grep -Fq 's.data(), s.size()' "$patch_fixture/src/tracing/$tracing_file"
+done
 ! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$ROOT/tests/fixtures/node-ranges-split-compat.cpp" \
+  -o "$TMP/node-ranges-split-compat"
+[[ $("$TMP/node-ranges-split-compat") == 'ranges_split_view=PASS' ]]
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
 patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
