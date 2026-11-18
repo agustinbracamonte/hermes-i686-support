@@ -62,7 +62,7 @@ The first hosted run verified the signed Bullseye snapshot and created an i386 r
 
 ### Run #24 current-head checkpoint (2026-11-18)
 
-PR #11 Actions run `44350183918` is `in_progress` on current head `117081448ed2e73d8503590db351c560ada1f9e9`. It verifies the whitespace-cleaned bit-cast patch and the ordered source edits. The final bit-cast patch has SHA-256 `cbcf0142f9f318cde5d500d5855345a58f83062f170d7cdea92bb90c26f3ec57`. Do not start another runtime build while this run is active. Hosted i386 evidence is not native B10 staging.
+PR #11 Actions run `44350183918` is `in_progress` on current head `117081448ed2e73d8503590db351c560ada1f9e9`. It verifies the whitespace-cleaned bit-cast patch and the ordered source edits. The final bit-cast patch has SHA-256 `cbcf0142f9f318cde5d500d5855345a58f83062f170d7cdea92bb90c26f3ec57`. The sole visible workflow step downloads the exact PR archive and then runs the full helper: debootstrap, package verification, serial CPython and Node builds, and pnpm WASM/offline-install checks. Its job timeout is 360 minutes, so the step label `Fetch the exact public PR source` remains active during the entire build and does not expose its internal phase. The build runs in Debian i386 userspace on a hosted x86_64 runner, not native B10 hardware. Do not start another runtime build while this run is active.
 
 ### Run #23 prior-head checkpoint (2026-11-18)
 
