@@ -14,14 +14,15 @@ bash -n "$ROOT/scripts/build-cpython-v0232-i686.sh" \
 "$ROOT/scripts/build-cpython-v0232-i686.sh" --help >/dev/null
 "$ROOT/scripts/build-node-v0232-i686.sh" --help >/dev/null
 grep -Fq -- '--openssl-no-asm' "$ROOT/scripts/build-node-v0232-i686.sh"
-grep -Fq -- '-msse2' "$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
+grep -Fq -- '-msse2' "$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
+grep -Fq -- "'libraries': [ '-latomic' ]" "$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 grep -Fq 'v0232_require_cpu_feature sse2' "$ROOT/scripts/build-node-v0232-i686.sh"
-grep -Fq 'node-i686-patch' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-i686-build-patches' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'CHROOT_STATUS=$?' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 
 patch_fixture="$TMP/node-source"
-mkdir -p "$patch_fixture/deps/zlib"
+mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl"
 cat >"$patch_fixture/deps/zlib/zlib.gyp" <<'GYP'
             ['target_arch in "ia32 x64" and OS!="ios"', {
               'defines': [ 'INFLATE_CHUNK_SIMD_SSE2' ],
@@ -42,14 +43,24 @@ cat >"$patch_fixture/deps/zlib/zlib.gyp" <<'GYP'
                   'defines': [ 'INFLATE_CHUNK_READ_64LE' ],
                 }],
 GYP
+cat >"$patch_fixture/deps/openssl/openssl.gyp" <<'GYP'
+        #'OPENSSL_NO_DEPRECATED',
+      ],
+      'conditions': [
+        ['openssl_no_asm==1', {
+          'includes': ['./openssl-cl_no_asm.gypi'],
+        }, 'target_arch=="arm64" and OS=="win"', {
+GYP
 patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
-  <"$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
+  <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
-  <"$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
+  <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
 [[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
+grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
+grep -Fq "'libraries': [ '-latomic' ]" "$patch_fixture/deps/openssl/openssl.gyp"
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
-  <"$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
+  <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 
 set +e
 output=$(GITHUB_ACTIONS=false RUNNER_ENVIRONMENT=self-hosted RUNNER_ARCH=X64 \
