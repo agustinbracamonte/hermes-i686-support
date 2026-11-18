@@ -1,6 +1,6 @@
 # Hermes Agent v0.23.2 i686 implementation status
 
-Updated 2026-11-17. This is the public, generic compatibility workstream. It does not include a Hermes source checkout, private Púlsar code, credentials, sessions, wheels, or binaries.
+Updated 2026-11-18. This is the public, generic compatibility workstream. It does not include a Hermes source checkout, private Púlsar code, credentials, sessions, wheels, or binaries.
 
 ## Pinned source
 
@@ -109,6 +109,8 @@ Executed in this work session:
 The host for this implementation is Linux x86_64. The test environment was built with the checkout's `pm.build_env` using bootstrap CPython 3.12.14 and the managed CPython 3.14.9 test interpreter. A passing x86_64 or fixture test is not native i686 evidence. Use an isolated Debian 11 i386 staging image/device for the remaining runtime gates in `V0232-ACCEPTANCE.md`. Debian 11's default GCC 10.2 is below Node 26's requirement. Bullseye security's Clang 19.1 i386 package and signed index digest are verified at metadata level; actual `.deb` bytes and compiler execution remain pending because this host's proxy blocks the archive endpoint.
 
 ## Next engineering milestones
+
+PR #8 adds an owner-gated GitHub-hosted runtime build using the signed Debian snapshot. It has no token permissions, secrets, or binary uploads and refuses non-hosted runners. The workflow has not run yet, so native runtime evidence remains pending.
 
 1. Run the CPython 3.14.9 and Node 26.12.1 recipes on isolated ELF32/i686 staging with the documented compiler and system dependencies; capture interpreter/runtime ELF hashes and smoke results.
 2. Run the pnpm WASM CLI and offline install with that Node using `--require-ia32`; measure memory on the target before accepting it for Púlsar.

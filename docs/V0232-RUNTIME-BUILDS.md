@@ -44,6 +44,14 @@ GitHub documents standard hosted Linux runners as free for public repositories, 
 
 Any CI workflow must use no repository secrets, let APT verify its signed index and the `.deb` digest, avoid uploading binaries, keep only non-sensitive test summaries/hashes, and discard the runner after the job. Debian 11's LTS ended 2026-08-31. No CI runtime build has started in this work session.
 
+## Hosted build workflow in PR #8
+
+PR #8 adds .github/workflows/v0232-i686-runtime.yml and scripts/ci-v0232-i686-runtime-build.sh to test the hosted Debian 11 i386 route. The workflow is limited to owner-authored PRs targeting the Clang-toolchain branch. It has no GitHub token permissions, uses no checkout action or secrets, downloads the public PR archive at its exact head SHA, and uploads no artifacts. Its helper refuses local and self-hosted machines, including the B10.
+
+The hosted job bootstraps a Debian 11 i386 rootfs from the fixed Debian snapshot 20260912T092708Z, lets APT verify signed repository metadata, downloads Clang 1:19.1.7-3~deb11u1, and checks the package SHA-256 d52c7089346ebc4616d3e9e3bbee6eb0848455a9abb777746fdd32812ce981d3 before installation. It then runs the existing i686 process/compiler preflights and serial, checkpointed CPython and Node builds, followed by the pnpm WASM CLI and offline-file-install check under Node with process.arch=ia32. Only source hashes, package versions, result manifests and test summaries are retained in the Actions log/summary; binaries stay on the disposable runner.
+
+At the time this branch was prepared, the workflow had not yet run. The local proxy still blocks the snapshot archive, so this change is a reproducible attempt, not proof that the .deb can be retrieved or that either runtime compiles. A hosted pass would prove ELF32 execution and builds on that runner only; it would not establish B10 memory headroom, Púlsar staging behavior, or ARM64 execution. Debian 11's LTS ended 2026-08-31.
+
 ## pnpm 12.15.0 on i686
 
 The regular npm package pnpm@12.15.0 is not a pure-JavaScript CLI. Its bin/pnpm.mjs wrapper downloads and launches a separate native pnpm executable. With COREPACK_ENABLE_NETWORK=0 and an empty temporary HOME, it fails with the explicit message that the native binary cannot be downloaded.
@@ -99,7 +107,7 @@ These checks establish source, hash, PM staging, and host-side WASM behavior. Th
 
 ## Next staging checks
 
-1. Verify an approved Clang 19.1 package/source and checksum for the Debian 11 i386 toolchain, then run both preflights in isolated ELF32/i686 userspace. GCC must be >=13.2 or Clang >=19.1; Debian 11's default GCC is insufficient for Node.
+1. Run and review the owner-gated hosted CI job in PR #8; confirm the .deb digest, ELF32 compiler, CPython/Node build manifests and pnpm WASM offline install. Do not treat the hosted runner as B10 staging evidence.
 2. Build CPython, then Node, serially; retain each result manifest and the source/system package records.
 3. Run verify-v0232-pnpm-wasm.sh --require-ia32 against the built Node. Capture memory use and check the offline install result.
 4. Have Púlsar validate those outputs in its staging environment and reconcile the Node pin into its real lock. No staging host was accessed by this public task.

@@ -9,9 +9,18 @@ trap 'rm -rf -- "$TMP"' EXIT
 bash -n "$ROOT/scripts/build-cpython-v0232-i686.sh" \
   "$ROOT/scripts/build-node-v0232-i686.sh" \
   "$ROOT/scripts/v0232-i686-build-common.sh" \
-  "$ROOT/scripts/v0232-node-toolchain.sh"
+  "$ROOT/scripts/v0232-node-toolchain.sh" \
+  "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 "$ROOT/scripts/build-cpython-v0232-i686.sh" --help >/dev/null
 "$ROOT/scripts/build-node-v0232-i686.sh" --help >/dev/null
+
+set +e
+output=$(GITHUB_ACTIONS=false RUNNER_ENVIRONMENT=self-hosted RUNNER_ARCH=X64 \
+  "$ROOT/scripts/ci-v0232-i686-runtime-build.sh" "$ROOT" "$TMP/should-not-build" 2>&1)
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'only GitHub Actions is allowed'* ]]
+[[ ! -e "$TMP/should-not-build" ]]
 
 for script in build-cpython-v0232-i686.sh build-node-v0232-i686.sh; do
   set +e
