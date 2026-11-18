@@ -80,6 +80,9 @@ sed -n '/^install_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
 grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-cxx-header-selection.trace' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'C++ standard-library selection trace (Bullseye vector header missing)' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'cat "$trace" >&2' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq '#include <vector>' "$ROOT/tests/fixtures/node-source-location.cpp"
 grep -Fq 'std::vector<int> copy = values' "$ROOT/tests/fixtures/node-source-location.cpp"
 grep -Fq 'sizeof(std::source_location) == sizeof(void*)' "$ROOT/tests/fixtures/node-source-location.cpp"

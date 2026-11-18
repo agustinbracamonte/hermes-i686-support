@@ -254,13 +254,17 @@ verify_cxx_header_selection() {
   if ! printf '#include <source_location>\n#include <vector>\n' | \
       "$CXX_BIN" -std=c++20 -H "${CXX_HEADER_FLAGS[@]}" -x c++ -fsyntax-only - \
       >/dev/null 2>"$trace"; then
+    printf 'C++ standard-library selection trace (compiler probe failed):\n' >&2
+    cat "$trace" >&2
     v0232_die "failed to compile the source_location/Bullseye-header selection probe"
   fi
   grep -Fq "$CXX_SOURCE_LOCATION_OVERLAY/source_location" "$trace" || \
-    v0232_die "Clang did not select the pinned source_location-only overlay"
+    { printf 'C++ standard-library selection trace (source_location overlay missing):\n' >&2; cat "$trace" >&2; v0232_die "Clang did not select the pinned source_location-only overlay"; }
   grep -Fq '/usr/include/c++/10/vector' "$trace" || \
-    v0232_die "Clang did not retain Bullseye GCC 10 standard-library headers"
+    { printf 'C++ standard-library selection trace (Bullseye vector header missing):\n' >&2; cat "$trace" >&2; v0232_die "Clang did not retain Bullseye GCC 10 standard-library headers"; }
   if grep -Fq "$CXX_HEADERS_ROOT/usr/include/c++/11/" "$trace"; then
+    printf 'C++ standard-library selection trace (unexpected GCC 11 headers):\n' >&2
+    cat "$trace" >&2
     v0232_die "Clang selected a GCC 11 standard-library header outside the source_location overlay"
   fi
   {
