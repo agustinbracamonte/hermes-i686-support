@@ -51,6 +51,8 @@ CXX_BIN=${CXX:-g++}
 
 check_compiler() {
   v0232_assert_i686_process
+  # Node's pinned zlib.gyp enables its SSE2 slide-hash implementation for ia32.
+  v0232_require_cpu_feature sse2
   v0232_node_check_compiler_pair "$CC_BIN" "$CXX_BIN" >/dev/null
 }
 
@@ -139,7 +141,7 @@ configure_build() {
   cd "$BUILD"
   env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u MAKEFLAGS -u CONFIG_SITE \
     LC_ALL=C TZ=UTC PATH="$(dirname "$NODE_PYTHON"):$PATH" PYTHON="$NODE_PYTHON" \
-    CC="$CC_BIN" CXX="$CXX_BIN" CFLAGS='-O2 -g0' CXXFLAGS='-O2 -g0' \
+    CC="$CC_BIN" CXX="$CXX_BIN" CFLAGS='-O2 -g0 -msse2' CXXFLAGS='-O2 -g0 -msse2' \
     "$SOURCE/configure" --prefix="$PREFIX" --dest-cpu=ia32 --with-intl=full-icu --openssl-no-asm
 }
 
@@ -189,11 +191,11 @@ NODE
     printf 'compiler=%s\ncxx=%s\nmake=%s\nlinker=%s\npython=%s\n' "$CC_INFO" "$CXX_INFO" "$MAKE_INFO" "$LD_INFO" "$PY_INFO"
     printf 'toolchain_fingerprint=%s\nscript_sha256=%s\nnode_elf=' "$TOOLCHAIN_FINGERPRINT" "$SCRIPT_FINGERPRINT"
     v0232_elf_identity "$node"
-    printf 'node_version=%s\nnode_arch=%s\nnpm_version=%s\nnode_sha256=%s\nopenssl_asm=disabled\nintl=full-icu;locale=es-AR\nwasm_shared_memory=1GiB-maximum\nworker_threads=PASS\n' "$($node --version)" "$($node -p 'process.arch')" "$npm_version" "$(v0232_sha256 "$node")"
+    printf 'node_version=%s\nnode_arch=%s\nnpm_version=%s\nnode_sha256=%s\ntarget_cpu_features=sse2\nopenssl_asm=disabled\nintl=full-icu;locale=es-AR\nwasm_shared_memory=1GiB-maximum\nworker_threads=PASS\n' "$($node --version)" "$($node -p 'process.arch')" "$npm_version" "$(v0232_sha256 "$node")"
   } >"$report"
 }
 
-CONFIG_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT" "$SCRIPT_FINGERPRINT" "$PREFIX" "$PY_INFO" "CC=$CC_BIN" "CXX=$CXX_BIN" 'CFLAGS=-O2 -g0' '--dest-cpu=ia32' '--with-intl=full-icu' '--openssl-no-asm')
+CONFIG_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT" "$SCRIPT_FINGERPRINT" "$PREFIX" "$PY_INFO" "CC=$CC_BIN" "CXX=$CXX_BIN" 'CFLAGS=-O2 -g0 -msse2' 'CXXFLAGS=-O2 -g0 -msse2' '--dest-cpu=ia32' '--with-intl=full-icu' '--openssl-no-asm')
 BUILD_FINGERPRINT=$(v0232_fingerprint "$CONFIG_FINGERPRINT" 'make -j1')
 INSTALL_FINGERPRINT=$(v0232_fingerprint "$BUILD_FINGERPRINT" "$PREFIX" 'make -j1 install')
 SMOKE_FINGERPRINT=$(v0232_fingerprint "$INSTALL_FINGERPRINT" 'ELF32; Node; npm; WebAssembly shared-memory; worker_threads; es-AR Intl')

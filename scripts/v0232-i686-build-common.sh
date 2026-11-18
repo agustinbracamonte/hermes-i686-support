@@ -55,6 +55,17 @@ v0232_assert_i686_process() {
     v0232_die "build must run in an i686 userspace process (saw $class $machine; kernel uname is intentionally ignored)"
 }
 
+v0232_require_cpu_feature() {
+  local feature=$1 cpuinfo=${2:-/proc/cpuinfo}
+  [[ -r "$cpuinfo" ]] || v0232_die "cannot read CPU feature flags from $cpuinfo"
+  awk -v feature="$feature" '
+    /^flags[[:space:]]*:/ || /^Features[[:space:]]*:/ {
+      for (i = 2; i <= NF; i++) if ($i == feature) found = 1
+    }
+    END { exit !found }
+  ' "$cpuinfo" || v0232_die "Node i686 build requires CPU feature '$feature'"
+}
+
 v0232_assert_i686_compiler() {
   local cc=$1 target
   target=$("$cc" -dumpmachine 2>/dev/null) || v0232_die "$cc cannot report its target triple"
