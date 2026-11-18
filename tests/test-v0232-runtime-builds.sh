@@ -22,7 +22,7 @@ grep -Fq 'CHROOT_STATUS=$?' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 
 patch_fixture="$TMP/node-source"
-mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl"
+mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl" "$patch_fixture/src"
 cat >"$patch_fixture/deps/zlib/zlib.gyp" <<'GYP'
             ['target_arch in "ia32 x64" and OS!="ios"', {
               'defines': [ 'INFLATE_CHUNK_SIMD_SSE2' ],
@@ -51,6 +51,14 @@ cat >"$patch_fixture/deps/openssl/openssl.gyp" <<'GYP'
           'includes': ['./openssl-cl_no_asm.gypi'],
         }, 'target_arch=="arm64" and OS=="win"', {
 GYP
+cat >"$patch_fixture/src/encoding_binding.cc" <<'CPP'
+  std::unique_ptr<char[]> data_copy;
+  if (isShared && length != 0) {
+    data_copy = std::make_unique_for_overwrite<char[]>(length);
+    memcpy(data_copy.get(), data, length);
+    data = data_copy.get();
+  }
+CPP
 patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
@@ -59,6 +67,8 @@ grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
 [[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
 grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
 grep -Fq "'libraries': [ '-latomic' ]" "$patch_fixture/deps/openssl/openssl.gyp"
+grep -Fq 'data_copy.reset(new char[length]);' "$patch_fixture/src/encoding_binding.cc"
+grep -Fq 'memcpy(data_copy.get(), data, length);' "$patch_fixture/src/encoding_binding.cc"
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 grep -Fq 'readonly CXX_HEADERS_PACKAGE=libstdc++-11-dev' "$ROOT/scripts/build-node-v0232-i686.sh"

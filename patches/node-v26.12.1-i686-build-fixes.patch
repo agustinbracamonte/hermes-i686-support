@@ -32,3 +32,13 @@
          ['openssl_no_asm==1', {
            'includes': ['./openssl-cl_no_asm.gypi'],
          }, 'target_arch=="arm64" and OS=="win"', {
+--- a/src/encoding_binding.cc
++++ b/src/encoding_binding.cc
+@@ -448,6 +448,6 @@
+   std::unique_ptr<char[]> data_copy;
+   if (isShared && length != 0) {
+-    data_copy = std::make_unique_for_overwrite<char[]>(length);
++    data_copy.reset(new char[length]);
+     memcpy(data_copy.get(), data, length);
+     data = data_copy.get();
+   }
