@@ -1,0 +1,62 @@
+diff --git a/pm/lock.json b/pm/lock.json
+index cb4094283e..ad8027c2ce 100644
+--- a/pm/lock.json
++++ b/pm/lock.json
+@@ -159,6 +159,10 @@
+           "sha256": "73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5",
+           "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_arm64.tar.gz"
+         },
++        "linux-i686": {
++          "sha256": "ba556b1061cfc89fee62d1e59dfacd2ea646d8c3bb41cbef909ec6ed27071512",
++          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_386.tar.gz"
++        },
+         "linux-x64": {
+           "sha256": "a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112",
+           "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
+diff --git a/pm/packages.py b/pm/packages.py
+index 0a99215fb8..8a7f71ba8e 100644
+--- a/pm/packages.py
++++ b/pm/packages.py
+@@ -997,7 +997,7 @@ class Gh(BinaryPackage):
+         lookup_target = target.removesuffix("-musl") if target in MUSL_TARGETS else target
+         osname, arch = lookup_target.split("-")
+         plat = {"win32": "windows", "linux": "linux", "darwin": "macOS"}[osname]
+-        arch = {"x64": "amd64", "arm64": "arm64"}[arch]
++        arch = {"i686": "386", "x64": "amd64", "arm64": "arm64"}[arch]
+         ext = "zip" if osname in ("win32", "darwin") else "tar.gz"
+         return (
+             f"https://github.com/cli/cli/releases/download/v{version}/"
+diff --git a/tests/pm/test_gh_i686.py b/tests/pm/test_gh_i686.py
+new file mode 100644
+index 0000000000..2d997c668b
+--- /dev/null
++++ b/tests/pm/test_gh_i686.py
+@@ -0,0 +1,28 @@
++"""The pinned GitHub CLI 386 release is selected only for Linux i686."""
++
++from pm import paths
++from pm.lock import Lockfile
++from pm.registry import get_package
++
++
++URL = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_386.tar.gz"
++SHA256 = "ba556b1061cfc89fee62d1e59dfacd2ea646d8c3bb41cbef909ec6ed27071512"
++
++
++def test_gh_fetch_url_maps_i686_without_changing_x64_or_arm64():
++    package = get_package("gh")
++
++    assert package.fetch_url("2.97.0", "linux-i686") == URL
++    assert package.fetch_url("2.97.0", "linux-x64") == (
++        "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
++    )
++    assert package.fetch_url("2.97.0", "linux-arm64") == (
++        "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_arm64.tar.gz"
++    )
++
++
++def test_gh_i686_lock_row_matches_verified_release_asset():
++    lock = Lockfile(paths.lockfile_path())
++
++    assert lock.version("gh") == "2.97.0"
++    assert lock.artifacts("gh", "linux-i686") == [{"url": URL, "sha256": SHA256}]
