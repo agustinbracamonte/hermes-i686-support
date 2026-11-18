@@ -24,7 +24,8 @@ grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 patch_fixture="$TMP/node-source"
 mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl" \
   "$patch_fixture/deps/v8/src/base" "$patch_fixture/deps/v8/src/strings" \
-  "$patch_fixture/deps/v8/src/api" "$patch_fixture/src/tracing" "$patch_fixture/src"
+  "$patch_fixture/deps/v8/src/api" "$patch_fixture/deps/v8/src/inspector" \
+  "$patch_fixture/src/tracing" "$patch_fixture/src"
 cat >"$patch_fixture/src/node_options.cc" <<'CPP'
   inspect_publish_uid.console = false;
   inspect_publish_uid.http = false;
@@ -137,6 +138,20 @@ std::string SourceLocation::ToString() const {
 
 }  // namespace v8
 CPP
+cat >"$patch_fixture/deps/v8/src/inspector/string-util.h" <<'CPP'
+class Binary {
+ public:
+  String toBase64() const;
+  static Binary fromBase64(const String& base64, bool* success);
+  static Binary fromSpan(v8_crdtp::span<uint8_t> span) {
+    return fromSpan(v8::MemorySpan<const uint8_t>(span.begin(), span.size()));
+  }
+  static Binary fromSpan(v8::MemorySpan<const uint8_t> span) {
+    return Binary(
+        std::make_shared<std::vector<uint8_t>>(span.begin(), span.end()));
+  }
+};
+CPP
 patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
@@ -153,6 +168,10 @@ patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
 grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
 [[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
 grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
@@ -185,6 +204,10 @@ grep -Fq 'loc_.file_name()' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq 'loc_.line()' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq 'return stream.str();' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq '#else' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'std::make_shared<std::vector<uint8_t>>(span.begin(), span.end())' \
+  "$patch_fixture/deps/v8/src/inspector/string-util.h"
+! grep -Fq 'v8::MemorySpan<const uint8_t>(span.begin(), span.size())' \
+  "$patch_fixture/deps/v8/src/inspector/string-util.h"
 ! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
 "${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
   "$ROOT/tests/fixtures/node-ranges-split-compat.cpp" \
@@ -203,6 +226,10 @@ bit_cast_compiler=${CXX:-c++}
   "$ROOT/tests/fixtures/node-ostringstream-rvalue-compat.cpp" \
   -o "$TMP/node-ostringstream-i686-fallback"
 "$TMP/node-ostringstream-i686-fallback"
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$ROOT/tests/fixtures/node-v8-memory-span-compat.cpp" \
+  -o "$TMP/node-v8-memory-span-compat"
+[[ $("$TMP/node-v8-memory-span-compat") == $'memory_span_nonempty_copy=PASS\nmemory_span_empty_copy=PASS' ]]
 mkdir -p "$TMP/legacy-cxx-headers"
 : >"$TMP/legacy-cxx-headers/bit"
 cat >"$TMP/legacy-cxx-headers/type_traits" <<'CPP'
@@ -224,6 +251,10 @@ patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
 patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
 patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
@@ -253,6 +284,9 @@ grep -Fq 'node_bit_cast_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i68
 grep -Fq 'node-v26.12.1-i686-ostringstream-rvalue-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_ostringstream_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'ostringstream-rvalue-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-v26.12.1-i686-v8-memory-span-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_v8_memory_span_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'v8-memory-span-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_patch_set_fingerprint' "$ROOT/scripts/build-node-v0232-i686.sh"
 sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
@@ -262,6 +296,7 @@ grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-b
 grep -Fq 'node-ranges-split-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-bit-cast-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-ostringstream-rvalue-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-v8-memory-span-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.trace' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'C++ standard-library selection trace (Bullseye vector header missing)' "$ROOT/scripts/build-node-v0232-i686.sh"
