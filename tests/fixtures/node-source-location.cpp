@@ -2,6 +2,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <unordered_map>
+#include <vector>
 
 static_assert(sizeof(std::source_location) == sizeof(void*),
               "the i686 V8 source_location member must retain pointer-sized layout");
@@ -12,6 +14,14 @@ static std::source_location caller_location(
 }
 
 int main() {
+  const std::vector<int> values{3, 5, 8};
+  const std::vector<int> copy = values;
+  std::unordered_map<unsigned, std::vector<int>> table;
+  table.emplace(1, copy);
+  if (table.at(1).size() != 3 || table.at(1).at(1) != 5) {
+    return 2;
+  }
+
   const unsigned expected_line = __LINE__ + 1;
   const std::source_location location = caller_location();
   if (location.line() != expected_line ||
