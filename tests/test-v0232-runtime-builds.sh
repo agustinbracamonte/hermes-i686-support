@@ -13,6 +13,9 @@ bash -n "$ROOT/scripts/build-cpython-v0232-i686.sh" \
   "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 "$ROOT/scripts/build-cpython-v0232-i686.sh" --help >/dev/null
 "$ROOT/scripts/build-node-v0232-i686.sh" --help >/dev/null
+grep -Fq -- '--openssl-no-asm' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'CHROOT_STATUS=$?' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 
 set +e
 output=$(GITHUB_ACTIONS=false RUNNER_ENVIRONMENT=self-hosted RUNNER_ARCH=X64 \
