@@ -87,18 +87,22 @@ relative_store=$(PNPM_NODE_BIN=/tmp/untrusted-runtime/node \
   --node-store relative/runtime 2>&1 || true)
 grep -Fq -- '--node-store must be an absolute path' <<<"$relative_store"
 
-# Mock the shell runner around a pre-existing Node store and a symlink to that
-# store. The runner must pass its own mktemp child to PM in both cases, and it
-# must leave every file in the supplied Node store untouched.
+# Mock the shell runner around pre-existing Node stores and symlinks, including
+# /tmp and /var/tmp. The runner must select a safe stage root and pass private
+# TMPDIR/TMP/TEMP values to PM, even when caller temp variables point at a store.
 mock_bin="$TMP/mock-bin"
 fake_checkout="$TMP/fake-checkout"
 node_store="$TMP/preexisting-node-store"
 node_store_link="$TMP/node-store-link"
+tmp_root_link="$TMP/tmp-root-link"
+var_tmp_root_link="$TMP/var-tmp-root-link"
 mkdir -p "$mock_bin" "$fake_checkout/.git" "$node_store"
 printf 'verified fixture archive\n' >"$TMP/pnpm-wasm.tgz"
 printf 'fixture node\n' >"$node_store/node"
 chmod 755 "$node_store/node"
 ln -s "$node_store" "$node_store_link"
+ln -s /tmp "$tmp_root_link"
+ln -s /var/tmp "$var_tmp_root_link"
 cat >"$mock_bin/git" <<'GIT'
 #!/usr/bin/env bash
 [[ "$1" == -C && "$3" == rev-parse && "$4" == HEAD ]] || exit 97
@@ -109,6 +113,9 @@ cat >"$mock_bin/python" <<'PYTHON'
 {
   printf 'runtime=%s\n' "$HERMES_RUNTIME_DIR"
   printf 'node_store=%s\n' "$PNPM_NODE_STORE"
+  printf 'tmpdir=%s\n' "$TMPDIR"
+  printf 'tmp=%s\n' "$TMP"
+  printf 'temp=%s\n' "$TEMP"
 } >"$PNPM_TEST_RECORD"
 PYTHON
 chmod 755 "$mock_bin/git" "$mock_bin/python"
@@ -116,7 +123,7 @@ store_snapshot() {
   find "$node_store" -type f -print0 | sort -z | xargs -0 -r sha256sum
 }
 before_store=$(store_snapshot)
-for selected_store in "$node_store" "$node_store_link"; do
+for selected_store in "$node_store" "$node_store_link" /tmp "$tmp_root_link" /var/tmp "$var_tmp_root_link"; do
   record="$TMP/runner-record"
   PATH="$mock_bin:$PATH" TMPDIR="$selected_store" HERMES_PYTHON="$mock_bin/python" \
     PNPM_WASM_ARCHIVE="$TMP/pnpm-wasm.tgz" PNPM_TEST_RECORD="$record" \
@@ -124,20 +131,33 @@ for selected_store in "$node_store" "$node_store_link"; do
     --node-bin "$selected_store/node" --node-store "$selected_store"
   runtime=$(sed -n 's/^runtime=//p' "$record")
   passed_store=$(sed -n 's/^node_store=//p' "$record")
+  python_tmpdir=$(sed -n 's/^tmpdir=//p' "$record")
+  python_tmp=$(sed -n 's/^tmp=//p' "$record")
+  python_temp=$(sed -n 's/^temp=//p' "$record")
   stage_root=${runtime%/tools}
   case "$stage_root" in
     /tmp/hermes-pnpm-stage.*|/var/tmp/hermes-pnpm-stage.*) ;;
     *) echo "runner used an unexpected temp path: $runtime" >&2; exit 1 ;;
   esac
   [[ "$passed_store" == "$selected_store" ]]
+  [[ "$python_tmpdir" == "$stage_root/tmp" ]]
+  [[ "$python_tmp" == "$stage_root/tmp" ]]
+  [[ "$python_temp" == "$stage_root/tmp" ]]
   [[ "$runtime" != "$selected_store" ]]
   [[ ! -e "$runtime" ]]
   [[ "$stage_root" != "$(realpath "$selected_store")"* ]]
-  [[ "$(store_snapshot)" == "$before_store" ]]
+  if [[ "$selected_store" == "$node_store" || "$selected_store" == "$node_store_link" ]]; then
+    [[ "$(store_snapshot)" == "$before_store" ]]
+  fi
 done
 grep -Fq 'HERMES_RUNTIME_DIR="$TMP/tools"' "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
 grep -Fq 'store = Path(os.environ["HERMES_RUNTIME_DIR"]).resolve()' \
   "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
+grep -Fq 'TMPDIR="$PRIVATE_TMP" TMP="$PRIVATE_TMP" TEMP="$PRIVATE_TMP"' \
+  "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
+grep -Fq '"TMPDIR": str(runtime_tmp)' "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
+grep -Fq '"TMP": str(runtime_tmp)' "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
+grep -Fq '"TEMP": str(runtime_tmp)' "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
 ! grep -Eq 'HERMES_RUNTIME_DIR=.*PNPM_NODE_STORE|mkdir[^\n]*PNPM_NODE_STORE' \
   "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
 

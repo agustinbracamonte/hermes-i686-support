@@ -104,7 +104,10 @@ done
 [[ -n "$TMP_BASE" ]] || { echo 'no safe temporary directory outside --node-store' >&2; exit 2; }
 TMP=$(mktemp -d "$TMP_BASE/hermes-pnpm-stage.XXXXXX")
 trap 'rm -rf -- "$TMP"' EXIT
+mkdir -p "$TMP/home" "$TMP/tmp"
+PRIVATE_TMP="$TMP/tmp"
 HERMES_HOME="$TMP/home" HERMES_RUNTIME_DIR="$TMP/tools" \
+  TMPDIR="$PRIVATE_TMP" TMP="$PRIVATE_TMP" TEMP="$PRIVATE_TMP" \
   PNPM_NODE_BIN="$PNPM_NODE_BIN" PNPM_NODE_STORE="$PNPM_NODE_STORE" \
   PNPM_REQUIRE_IA32="$PNPM_REQUIRE_IA32" \
   "$PYTHON" - "$UPSTREAM" "$ARCHIVE" <<'PY'
@@ -240,10 +243,15 @@ try:
 
     runtime_test = Path(os.environ["HERMES_HOME"]).parent / "pnpm-runtime-test"
     test_home = runtime_test / "home"
+    runtime_tmp = runtime_test / "tmp"
     runtime_test.mkdir(parents=True)
     test_home.mkdir(parents=True)
+    runtime_tmp.mkdir()
     env = {
         "HOME": str(test_home),
+        "TMPDIR": str(runtime_tmp),
+        "TMP": str(runtime_tmp),
+        "TEMP": str(runtime_tmp),
         "PATH": f"{node.parent}:/usr/bin:/bin",
         "COREPACK_ENABLE_NETWORK": "0",
         "CI": "1",
