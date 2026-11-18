@@ -1,0 +1,16 @@
+--- a/deps/v8/src/base/macros.h
++++ b/deps/v8/src/base/macros.h
+@@ -157,7 +157,13 @@
+       std::is_trivially_copyable_v<Dest>,
+       "bit_cast requires the destination type to be trivially copyable");
+ 
++#if defined(__i386__) && defined(__clang__) && !defined(__cpp_lib_bit_cast)
++  // Bullseye libstdc++ has no std::bit_cast; Clang 19 provides the equivalent
++  // compiler builtin for this i686 target.
++  return __builtin_bit_cast(Dest, source);
++#else
+   return std::bit_cast<Dest, Source>(source);
++#endif
+ }
+ 
+ }  // namespace v8::base

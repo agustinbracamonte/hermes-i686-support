@@ -11,9 +11,11 @@ source "$SCRIPT_DIR/v0232-node-toolchain.sh"
 readonly VERSION=26.12.1
 readonly I686_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-build-fixes.patch"
 readonly RANGES_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-ranges-compat.patch"
+readonly BIT_CAST_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-bit-cast-compat.patch"
 readonly I686_PATCH_SHA256=$(v0232_sha256 "$I686_PATCH")
 readonly RANGES_PATCH_SHA256=$(v0232_sha256 "$RANGES_PATCH")
-readonly PATCH_SET_FINGERPRINT=$(v0232_fingerprint "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256")
+readonly BIT_CAST_PATCH_SHA256=$(v0232_sha256 "$BIT_CAST_PATCH")
+readonly PATCH_SET_FINGERPRINT=$(v0232_fingerprint "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$BIT_CAST_PATCH_SHA256")
 readonly SOURCE_URL=https://nodejs.org/dist/v26.12.1/node-v26.12.1.tar.xz
 readonly SOURCE_SHA256=053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c
 readonly SOURCE_SHASUMS=https://nodejs.org/dist/v26.12.1/SHASUMS256.txt
@@ -25,14 +27,17 @@ readonly CXX_HEADERS_URL=https://deb.debian.org/debian/pool/main/g/gcc-11/libstd
 readonly CXX_HEADERS_SHA256=8402d1e5e1f09308fd5273b5554476c8ee6fc55c984ef2fe55f46ef7b117f58c
 readonly SOURCE_LOCATION_FIXTURE="$SCRIPT_DIR/../tests/fixtures/node-source-location.cpp"
 readonly RANGES_FIXTURE="$SCRIPT_DIR/../tests/fixtures/node-ranges-split-compat.cpp"
+readonly BIT_CAST_FIXTURE="$SCRIPT_DIR/../tests/fixtures/node-bit-cast-compat.cpp"
 readonly SCRIPT_FINGERPRINT=$(v0232_fingerprint \
   "$(v0232_sha256 "$0")" \
   "$(v0232_sha256 "$SCRIPT_DIR/v0232-i686-build-common.sh")" \
   "$(v0232_sha256 "$SCRIPT_DIR/v0232-node-toolchain.sh")" \
   "$(v0232_sha256 "$SOURCE_LOCATION_FIXTURE")" \
   "$(v0232_sha256 "$RANGES_FIXTURE")" \
+  "$(v0232_sha256 "$BIT_CAST_FIXTURE")" \
   "$I686_PATCH_SHA256" \
-  "$RANGES_PATCH_SHA256")
+  "$RANGES_PATCH_SHA256" \
+  "$BIT_CAST_PATCH_SHA256")
 
 MODE=build
 case "${1:-}" in
@@ -298,6 +303,7 @@ apply_i686_build_patches() {
 
   apply_one_i686_patch "$I686_PATCH"
   apply_one_i686_patch "$RANGES_PATCH"
+  apply_one_i686_patch "$BIT_CAST_PATCH"
 }
 
 PATCH_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$PATCH_SET_FINGERPRINT")
@@ -341,6 +347,24 @@ probe_ranges_split() {
     printf 'compiler=%s\nnode_i686_build_patch_sha256=%s\nnode_ranges_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
       "$CXX_INFO" "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
     cat "$probe_report"
+  } >"$probe_report.tmp"
+  mv -f -- "$probe_report.tmp" "$probe_report"
+  cat "$probe_report"
+}
+
+probe_bit_cast() {
+  local probe_binary="$ROOT/tmp/node-bit-cast-probe"
+  local probe_report="$RESULTS/node-bit-cast-probe.txt"
+  mkdir -p "$(dirname "$probe_binary")"
+  "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror "${CXX_HEADER_FLAGS[@]}" \
+    "$BIT_CAST_FIXTURE" -o "$probe_binary"
+  v0232_assert_i686_elf "$probe_binary"
+  "$probe_binary"
+  rm -f -- "$probe_binary"
+  {
+    printf 'compiler=%s\nnode_bit_cast_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
+      "$CXX_INFO" "$BIT_CAST_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
+    printf 'node_bit_cast_probe=PASS\n'
   } >"$probe_report.tmp"
   mv -f -- "$probe_report.tmp" "$probe_report"
   cat "$probe_report"
@@ -430,9 +454,9 @@ if (!locale.toLowerCase().startsWith('es')) throw new Error(`Spanish locale data
 console.log(`intl_locale=${locale}`);
 NODE
   {
-    printf 'source_url=%s\nsource_sha256=%s\nsource_shasums=%s\nsource_tag_commit=%s\nnode_i686_build_patch_sha256=%s\nnode_ranges_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
+    printf 'source_url=%s\nsource_sha256=%s\nsource_shasums=%s\nsource_tag_commit=%s\nnode_i686_build_patch_sha256=%s\nnode_ranges_compat_patch_sha256=%s\nnode_bit_cast_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
       "$SOURCE_URL" "$SOURCE_SHA256" "$SOURCE_SHASUMS" "$SOURCE_COMMIT" \
-      "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
+      "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$BIT_CAST_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
     printf 'cxx_headers_package=%s=%s\ncxx_headers_arch=%s\ncxx_headers_url=%s\ncxx_headers_sha256=%s\ncxx_headers_metadata=Debian Bookworm signed main i386 Packages index\n' "$CXX_HEADERS_PACKAGE" "$CXX_HEADERS_VERSION" "$CXX_HEADERS_ARCH" "$CXX_HEADERS_URL" "$CXX_HEADERS_SHA256"
     printf 'cxx_headers_runtime_policy=extracted headers only; no GCC 11 runtime installed\nsource_location_probe=PASS; pointer-sized std::source_location; caller file/function/line checked\n'
     printf 'compiler_libstdcxx_path=%s\nruntime_libstdcxx_package=libstdc++6=%s\nnode_libstdcxx_path=%s\nnode_glibcxx_requirements=%s\nnode_glibcxx_max=%s\n' "$CXX_RUNTIME_LIBSTDCPP_PATH" "$CXX_RUNTIME_PACKAGE_VERSION" "$NODE_CXX_RUNTIME_PATH" "$NODE_GLIBCXX_REQUIREMENTS" "$NODE_GLIBCXX_MAX"
@@ -447,7 +471,9 @@ SOURCE_LOCATION_FINGERPRINT=$(v0232_fingerprint "$CXX_HEADERS_TREE_FINGERPRINT" 
 v0232_checkpoint "$STATE" source-location-probe "$SOURCE_LOCATION_FINGERPRINT" "$RESULTS/node-source-location-probe.txt" probe_source_location
 RANGES_FINGERPRINT=$(v0232_fingerprint "$PATCH_SET_FINGERPRINT" "$CXX_INFO" "$CXX_RUNTIME_LIBSTDCPP_PATH" "${CXX_HEADER_FLAGS[*]}" "$(v0232_sha256 "$RANGES_FIXTURE")")
 v0232_checkpoint "$STATE" ranges-split-probe "$RANGES_FINGERPRINT" "$RESULTS/node-ranges-split-probe.txt" probe_ranges_split
-CONFIG_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$PATCH_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT" "$CXX_HEADERS_TREE_FINGERPRINT" "$SOURCE_LOCATION_FINGERPRINT" "$RANGES_FINGERPRINT" "$SCRIPT_FINGERPRINT" "$PREFIX" "$PY_INFO" "CC=$CC_BIN" "CXX=$CXX_BIN" 'CFLAGS=-O2 -g0' "CXXFLAGS=-O2 -g0 ${CXX_HEADER_FLAGS[*]}" '--dest-cpu=ia32' '--with-intl=full-icu' '--openssl-no-asm')
+BIT_CAST_FINGERPRINT=$(v0232_fingerprint "$PATCH_SET_FINGERPRINT" "$CXX_INFO" "$CXX_RUNTIME_LIBSTDCPP_PATH" "${CXX_HEADER_FLAGS[*]}" "$(v0232_sha256 "$BIT_CAST_FIXTURE")")
+v0232_checkpoint "$STATE" bit-cast-probe "$BIT_CAST_FINGERPRINT" "$RESULTS/node-bit-cast-probe.txt" probe_bit_cast
+CONFIG_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$PATCH_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT" "$CXX_HEADERS_TREE_FINGERPRINT" "$SOURCE_LOCATION_FINGERPRINT" "$RANGES_FINGERPRINT" "$BIT_CAST_FINGERPRINT" "$SCRIPT_FINGERPRINT" "$PREFIX" "$PY_INFO" "CC=$CC_BIN" "CXX=$CXX_BIN" 'CFLAGS=-O2 -g0' "CXXFLAGS=-O2 -g0 ${CXX_HEADER_FLAGS[*]}" '--dest-cpu=ia32' '--with-intl=full-icu' '--openssl-no-asm')
 BUILD_FINGERPRINT=$(v0232_fingerprint "$CONFIG_FINGERPRINT" 'make -j1')
 INSTALL_FINGERPRINT=$(v0232_fingerprint "$BUILD_FINGERPRINT" "$PREFIX" 'make -j1 install')
 SMOKE_FINGERPRINT=$(v0232_fingerprint "$INSTALL_FINGERPRINT" 'ELF32; Node; npm; WebAssembly shared-memory; worker_threads; es-AR Intl')

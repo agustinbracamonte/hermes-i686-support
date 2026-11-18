@@ -117,6 +117,15 @@ cat >"$patch_fixture/deps/v8/src/strings/owning-external-string-resource.h" <<'C
   }
 
 CPP
+cat >"$patch_fixture/deps/v8/src/base/macros.h" <<'CPP'
+      std::is_trivially_copyable_v<Dest>,
+      "bit_cast requires the destination type to be trivially copyable");
+
+  return std::bit_cast<Dest, Source>(source);
+}
+
+}  // namespace v8::base
+CPP
 patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
@@ -125,6 +134,10 @@ patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
 grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
 [[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
 grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
@@ -146,11 +159,36 @@ for tracing_file in agent_legacy.cc agent_perfetto.cc; do
     "$patch_fixture/src/tracing/$tracing_file"
   ! grep -Fq 's.data(), s.size()' "$patch_fixture/src/tracing/$tracing_file"
 done
+grep -Fq 'defined(__i386__) && defined(__clang__) && !defined(__cpp_lib_bit_cast)' \
+  "$patch_fixture/deps/v8/src/base/macros.h"
+grep -Fq 'return __builtin_bit_cast(Dest, source);' "$patch_fixture/deps/v8/src/base/macros.h"
+! grep -Fq 'return std::bit_cast<Dest, Source>(source);' "$patch_fixture/deps/v8/src/base/macros.h"
 ! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
 "${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
   "$ROOT/tests/fixtures/node-ranges-split-compat.cpp" \
   -o "$TMP/node-ranges-split-compat"
 [[ $("$TMP/node-ranges-split-compat") == 'ranges_split_view=PASS' ]]
+bit_cast_compiler=${CXX:-c++}
+"$bit_cast_compiler" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$ROOT/tests/fixtures/node-bit-cast-compat.cpp" -o "$TMP/node-bit-cast-standard"
+"$TMP/node-bit-cast-standard"
+mkdir -p "$TMP/legacy-cxx-headers"
+: >"$TMP/legacy-cxx-headers/bit"
+cat >"$TMP/legacy-cxx-headers/type_traits" <<'CPP'
+namespace std {
+template <class T>
+inline constexpr bool is_trivially_copyable_v = __is_trivially_copyable(T);
+}
+CPP
+"$bit_cast_compiler" -std=c++20 -O2 -Wall -Wextra -Werror -nostdinc++ \
+  -D__i386__ -D__clang__ -isystem "$TMP/legacy-cxx-headers" \
+  "$ROOT/tests/fixtures/node-bit-cast-compat.cpp" \
+  -o "$TMP/node-bit-cast-i686-fallback"
+"$TMP/node-bit-cast-i686-fallback"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
+patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
 patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
@@ -171,9 +209,12 @@ grep -Fq 'CXX_RUNTIME_PACKAGE_VERSION' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'GLIBCXX_3.4.28' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'source-location-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'ranges-split-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'bit-cast-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node-v26.12.1-i686-ranges-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-v26.12.1-i686-bit-cast-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_i686_build_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_ranges_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_bit_cast_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_patch_set_fingerprint' "$ROOT/scripts/build-node-v0232-i686.sh"
 sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
@@ -181,6 +222,7 @@ sed -n '/^install_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
 grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-ranges-split-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-bit-cast-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.trace' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'C++ standard-library selection trace (Bullseye vector header missing)' "$ROOT/scripts/build-node-v0232-i686.sh"
