@@ -83,7 +83,8 @@ Executed in this work session:
 - On the patched source, `HERMES_PYTHON=/tmp/hermes-v0232-test-venv/bin/python scripts/run_tests.sh tests/pm/test_gh_i686.py` — exit 0; two tests cover the exact i686 URL/lock pin and unchanged x64/ARM64 URL selection.
 - `scripts/build-cpython-v0232-i686.sh --prepare-only` — exit 0; exact CPython tag object/commit/tree verified; repeated invocation reused its source checkpoint.
 - `scripts/build-node-v0232-i686.sh --prepare-only` — exit 0; official Node source SHA verified and extraction checkpoint resumed. Both build scripts' `--preflight-only` reject this ELF64 x86_64 process before compiling.
-- `tests/test-v0232-runtime-builds.sh` — exit 0; syntax, serial-job rejection, bad archive hash, ELF32/x64 fixture, and checkpoint fingerprint coverage passed.
+- After adding the compiler helper to the Node script fingerprint, `HERMES_I686_BUILD_ROOT=/tmp/hermes-v0232-node-clang-prep NODE_SOURCE_ARCHIVE=/tmp/v0232-sources/node-v26.12.1.tar.xz scripts/build-node-v0232-i686.sh --prepare-only` passed twice, reusing the verified source/extraction checkpoints without downloading or compiling.
+- `tests/test-v0232-runtime-builds.sh` — exit 0; syntax, serial-job rejection, bad archive hash, ELF32/x64 fixture, checkpoint fingerprints, and synthetic GCC/Clang minimum-version/target checks passed. No native compile was attempted.
 - `python3 tests/test-v0232-wheel-reconcile.py` — exit 0; four synthetic-fixture cases cover lock hash/tag match, no lock row, no compatible wheel, digest mismatch, rejection of this host as an i686 tag source, and rejection of universal export markers.
 - Against the pinned public Hermes lock, `uv export --locked --offline --no-emit-project --no-annotate --format requirements.txt` emitted platform-marked entries and an Android VCS reference. That universal export is not an i686 dependency plan; the reconciler now rejects marker-bearing entries, and the staging plan must come from the target-specific resolver.
 - Both `--prepare-only` paths passed using nonexistent compiler paths and reused checkpoints.
@@ -105,7 +106,7 @@ Executed in this work session:
 | Native CPython/Node i686 builds and pnpm WASM on i686 | NOT RUN | The build shell/compiler are ELF64/x86_64. Build scripts fail closed; Node's x86 target is Experimental upstream. |
 | Full PM install, Python wheels, Node/npm, gateway | NOT RUN | No Node i686 artifact/lock row or complete dependency closure exists here. The 92 reported wheels were not downloaded again and no full install was attempted. |
 
-The host for this implementation is Linux x86_64. The test environment was built with the checkout's `pm.build_env` using bootstrap CPython 3.12.14 and the managed CPython 3.14.9 test interpreter. A passing x86_64 or fixture test is not native i686 evidence. Use an isolated Debian 11 i386 staging image/device for the remaining runtime gates in `V0232-ACCEPTANCE.md`.
+The host for this implementation is Linux x86_64. The test environment was built with the checkout's `pm.build_env` using bootstrap CPython 3.12.14 and the managed CPython 3.14.9 test interpreter. A passing x86_64 or fixture test is not native i686 evidence. Use an isolated Debian 11 i386 staging image/device for the remaining runtime gates in `V0232-ACCEPTANCE.md`. Debian 11's default GCC 10.2 is below Node 26's requirement. Bullseye security's Clang 19.1 i386 package and signed index digest are verified at metadata level; actual `.deb` bytes and compiler execution remain pending because this host's proxy blocks the archive endpoint.
 
 ## Next engineering milestones
 

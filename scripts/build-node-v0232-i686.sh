@@ -5,13 +5,18 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=scripts/v0232-i686-build-common.sh
 source "$SCRIPT_DIR/v0232-i686-build-common.sh"
+# shellcheck source=scripts/v0232-node-toolchain.sh
+source "$SCRIPT_DIR/v0232-node-toolchain.sh"
 
 readonly VERSION=26.12.1
 readonly SOURCE_URL=https://nodejs.org/dist/v26.12.1/node-v26.12.1.tar.xz
 readonly SOURCE_SHA256=053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c
 readonly SOURCE_SHASUMS=https://nodejs.org/dist/v26.12.1/SHASUMS256.txt
 readonly SOURCE_COMMIT=bc2e01dcf6acd5cf7d169b5f26cf89abaaeb41f1
-readonly SCRIPT_FINGERPRINT=$(v0232_fingerprint "$(v0232_sha256 "$0")" "$(v0232_sha256 "$SCRIPT_DIR/v0232-i686-build-common.sh")")
+readonly SCRIPT_FINGERPRINT=$(v0232_fingerprint \
+  "$(v0232_sha256 "$0")" \
+  "$(v0232_sha256 "$SCRIPT_DIR/v0232-i686-build-common.sh")" \
+  "$(v0232_sha256 "$SCRIPT_DIR/v0232-node-toolchain.sh")")
 
 MODE=build
 case "${1:-}" in
@@ -28,8 +33,9 @@ or .work/v0232-i686.
 --prepare-only    Fetch/verify/extract pinned Node sources without building.
 
 Optional inputs: HERMES_I686_BUILD_ROOT, NODE_SOURCE_ARCHIVE, CPYTHON_PREFIX,
-CC, CXX, JOBS=1. GCC >=13.2 and GNU Make are required by the pinned upstream
-build guide. The Node 26 x86 target is upstream Experimental.
+CC, CXX, JOBS=1. GCC >=13.2 or Clang >=19.1 and GNU Make are required by the
+pinned upstream build guide. C and C++ compilers must use the same family,
+version, and Linux i686 target. The Node 26 x86 target is upstream Experimental.
 HELP
     exit 0
     ;;
@@ -45,19 +51,7 @@ CXX_BIN=${CXX:-g++}
 
 check_compiler() {
   v0232_assert_i686_process
-  v0232_assert_i686_compiler "$CC_BIN"
-  local cc_version cxx_version cc_target cxx_target minimum
-  cc_version=$("$CC_BIN" -dumpfullversion -dumpversion)
-  cxx_version=$("$CXX_BIN" -dumpfullversion -dumpversion)
-  cc_target=$("$CC_BIN" -dumpmachine)
-  cxx_target=$("$CXX_BIN" -dumpmachine)
-  [[ "$cc_target" == "$cxx_target" ]] || v0232_die "C/C++ compiler targets differ ($cc_target vs $cxx_target)"
-  [[ "$cxx_target" =~ ^i[3-6]86(-|$) ]] || v0232_die "$CXX_BIN targets '$cxx_target', not Linux i686"
-  minimum=$(printf '%s\n' 13.2 "$cc_version" | sort -V | head -1)
-  [[ "$minimum" == 13.2 ]] || v0232_die "Node 26 upstream requires GCC >=13.2 (found $cc_version)"
-  minimum=$(printf '%s\n' 13.2 "$cxx_version" | sort -V | head -1)
-  [[ "$minimum" == 13.2 ]] || v0232_die "Node 26 upstream requires G++ >=13.2 (found $cxx_version)"
-  [[ "$cc_version" == "$cxx_version" ]] || v0232_die "GCC/G++ versions differ ($cc_version vs $cxx_version)"
+  v0232_node_check_compiler_pair "$CC_BIN" "$CXX_BIN" >/dev/null
 }
 
 if [[ "$MODE" == preflight ]]; then
@@ -65,7 +59,7 @@ if [[ "$MODE" == preflight ]]; then
   command -v "$CC_BIN" >/dev/null 2>&1 || v0232_die "missing C compiler: $CC_BIN"
   command -v "$CXX_BIN" >/dev/null 2>&1 || v0232_die "missing C++ compiler: $CXX_BIN"
   check_compiler
-  v0232_log "preflight passed (CC=$CC_BIN $($CC_BIN -dumpfullversion -dumpversion), CXX=$CXX_BIN, make=$(make --version | head -1))"
+  v0232_log "preflight passed (CC=$CC_BIN, CXX=$CXX_BIN, make=$(make --version | head -1))"
   exit 0
 fi
 
