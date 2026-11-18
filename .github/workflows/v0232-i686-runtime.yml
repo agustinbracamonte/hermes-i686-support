@@ -1,0 +1,34 @@
+name: v0.23.2 native i686 runtimes
+
+on:
+  pull_request:
+    branches:
+      - codex/v0232-node-clang-19
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions: {}
+
+jobs:
+  native-i686-runtime-build:
+    if: github.event.pull_request.author_association == 'OWNER'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Fetch the exact public PR source
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          source_root="$RUNNER_TEMP/hermes-i686-source"
+          archive="$RUNNER_TEMP/hermes-i686-source.tar.gz"
+          mkdir -p "$source_root"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/agustinbracamonte/hermes-i686-support/archive/$PR_HEAD_SHA.tar.gz" \
+            --output "$archive"
+          tar -xzf "$archive" --strip-components=1 -C "$source_root"
+          bash "$source_root/scripts/ci-v0232-i686-runtime-build.sh" \
+            "$source_root" "$RUNNER_TEMP/hermes-i686-build"

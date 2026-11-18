@@ -9,9 +9,141 @@ trap 'rm -rf -- "$TMP"' EXIT
 bash -n "$ROOT/scripts/build-cpython-v0232-i686.sh" \
   "$ROOT/scripts/build-node-v0232-i686.sh" \
   "$ROOT/scripts/v0232-i686-build-common.sh" \
-  "$ROOT/scripts/v0232-node-toolchain.sh"
+  "$ROOT/scripts/v0232-node-toolchain.sh" \
+  "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 "$ROOT/scripts/build-cpython-v0232-i686.sh" --help >/dev/null
 "$ROOT/scripts/build-node-v0232-i686.sh" --help >/dev/null
+grep -Fq -- '--openssl-no-asm' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq -- '-msse2' "$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
+grep -Fq -- "'libraries': [ '-latomic' ]" "$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
+grep -Fq 'v0232_require_cpu_feature sse2' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-i686-build-patches' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'CHROOT_STATUS=$?' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+
+patch_fixture="$TMP/node-source"
+mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl" \
+  "$patch_fixture/deps/v8/src/base" "$patch_fixture/deps/v8/src/strings" \
+  "$patch_fixture/src"
+cat >"$patch_fixture/deps/zlib/zlib.gyp" <<'GYP'
+            ['target_arch in "ia32 x64" and OS!="ios"', {
+              'defines': [ 'INFLATE_CHUNK_SIMD_SSE2' ],
+              'conditions': [
+                ['target_arch=="x64"', {
+                  'defines': [ 'INFLATE_CHUNK_READ_64LE' ],
+                }],
+              ],
+            }],
+            ['target_arch in "ia32 x64" and OS!="ios"', {
+              'dependencies': [ 'zlib_data_chunk_simd' ],
+              'sources': [ '<(ZLIB_ROOT)/slide_hash_simd.h' ]
+            }],
+              ],
+              'defines': [ 'DEFLATE_SLIDE_HASH_SSE2' ],
+              'conditions': [
+                ['target_arch=="x64"', {
+                  'defines': [ 'INFLATE_CHUNK_READ_64LE' ],
+                }],
+GYP
+cat >"$patch_fixture/deps/openssl/openssl.gyp" <<'GYP'
+        #'OPENSSL_NO_DEPRECATED',
+      ],
+      'conditions': [
+        ['openssl_no_asm==1', {
+          'includes': ['./openssl-cl_no_asm.gypi'],
+        }, 'target_arch=="arm64" and OS=="win"', {
+GYP
+cat >"$patch_fixture/src/encoding_binding.cc" <<'CPP'
+  std::unique_ptr<char[]> data_copy;
+  if (isShared && length != 0) {
+    data_copy = std::make_unique_for_overwrite<char[]>(length);
+    memcpy(data_copy.get(), data, length);
+    data = data_copy.get();
+  }
+CPP
+cat >"$patch_fixture/src/node_buffer.cc" <<'CPP'
+
+  std::unique_ptr<char[]> data_copy;
+  if (view->Buffer()->IsSharedArrayBuffer()) {
+    data_copy = std::make_unique_for_overwrite<char[]>(length);
+    memcpy(data_copy.get(), data_ptr + start, length);
+    data_ptr = data_copy.get();
+    start = 0;
+  }
+CPP
+cat >"$patch_fixture/deps/v8/src/base/vector.h" <<'CPP'
+  // Allocates a new vector of the specified size via the default allocator.
+  // Elements in the new vector are default-initialized.
+  static OwnedVector<T> NewForOverwrite(size_t size) {
+    if (size == 0) return {};
+    return OwnedVector<T>(std::make_unique_for_overwrite<T[]>(size), size);
+  }
+
+  // Allocates a new vector containing the specified collection of values.
+CPP
+cat >"$patch_fixture/deps/v8/src/strings/owning-external-string-resource.h" <<'CPP'
+  static Storage CreateUninitializedStorage(size_t length) {
+#ifdef V8_ENABLE_MEMORY_CORRUPTION_API
+    return ExternalStringsCage::GetInstance()->Allocate<CharT>(length);
+#else   // V8_ENABLE_MEMORY_CORRUPTION_API
+    return std::make_unique_for_overwrite<CharT[]>(length);
+#endif  // V8_ENABLE_MEMORY_CORRUPTION_API
+  }
+
+CPP
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
+grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
+[[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
+grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
+grep -Fq "'libraries': [ '-latomic' ]" "$patch_fixture/deps/openssl/openssl.gyp"
+grep -Fq 'data_copy.reset(new char[length]);' "$patch_fixture/src/encoding_binding.cc"
+grep -Fq 'memcpy(data_copy.get(), data, length);' "$patch_fixture/src/encoding_binding.cc"
+grep -Fq 'data_copy.reset(new char[length]);' "$patch_fixture/src/node_buffer.cc"
+grep -Fq 'return OwnedVector<T>(std::unique_ptr<T[]>(new T[size]), size);' \
+  "$patch_fixture/deps/v8/src/base/vector.h"
+grep -Fq 'return std::unique_ptr<CharT[]>(new CharT[length]);' \
+  "$patch_fixture/deps/v8/src/strings/owning-external-string-resource.h"
+! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
+grep -Fq 'readonly CXX_HEADERS_PACKAGE=libstdc++-11-dev' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'readonly CXX_HEADERS_VERSION=11.3.0-12' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'readonly CXX_HEADERS_ARCH=i386' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'readonly CXX_HEADERS_SHA256=8402d1e5e1f09308fd5273b5554476c8ee6fc55c984ef2fe55f46ef7b117f58c' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'dpkg-deb -x "$CXX_HEADERS_DEB" "$temporary"' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'diff -qr "$CXX_HEADERS_ROOT" "$temporary"' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'CXX_HEADER_FLAGS=(-isystem "$CXX_SOURCE_LOCATION_OVERLAY")' "$ROOT/scripts/build-node-v0232-i686.sh"
+! grep -Fq 'CXX_HEADER_FLAGS=(-nostdinc++' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'source-location-overlay' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'verify_cxx_header_selection' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'CXX_RUNTIME_PACKAGE_VERSION' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'GLIBCXX_3.4.28' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'source-location-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
+  grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
+sed -n '/^install_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
+  grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
+grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-cxx-header-selection.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-cxx-header-selection.trace' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'C++ standard-library selection trace (Bullseye vector header missing)' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'v0232_node_trace_has_gcc10_vector "$trace"' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'cat "$trace" >&2' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq '#include <vector>' "$ROOT/tests/fixtures/node-source-location.cpp"
+grep -Fq 'std::vector<int> copy = values' "$ROOT/tests/fixtures/node-source-location.cpp"
+grep -Fq 'sizeof(std::source_location) == sizeof(void*)' "$ROOT/tests/fixtures/node-source-location.cpp"
+grep -Fq 'std::source_location::current()' "$ROOT/tests/fixtures/node-source-location.cpp"
+
+set +e
+output=$(GITHUB_ACTIONS=false RUNNER_ENVIRONMENT=self-hosted RUNNER_ARCH=X64 \
+  "$ROOT/scripts/ci-v0232-i686-runtime-build.sh" "$ROOT" "$TMP/should-not-build" 2>&1)
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'only GitHub Actions is allowed'* ]]
+[[ ! -e "$TMP/should-not-build" ]]
 
 for script in build-cpython-v0232-i686.sh build-node-v0232-i686.sh; do
   set +e
@@ -49,6 +181,14 @@ PY
 
 source "$ROOT/scripts/v0232-i686-build-common.sh"
 source "$ROOT/scripts/v0232-node-toolchain.sh"
+printf 'processor : 0\nflags : fpu sse2 ssse3\n' >"$TMP/cpuinfo-sse2"
+v0232_require_cpu_feature sse2 "$TMP/cpuinfo-sse2"
+printf 'processor : 0\nflags : fpu ssse3\n' >"$TMP/cpuinfo-no-sse2"
+set +e
+output=$( (v0232_require_cpu_feature sse2 "$TMP/cpuinfo-no-sse2") 2>&1 )
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'requires CPU feature '\''sse2'\'''* ]]
 [[ "$(v0232_elf_identity "$TMP/i686.elf")" == 'ELF32 little-endian Intel 80386' ]]
 if v0232_elf_identity "$TMP/x64.elf" >/dev/null; then
   echo 'ELF guard accepted a 64-bit fixture' >&2
@@ -92,6 +232,21 @@ for args in (
 ):
     compiler(*args)
 PY
+
+header_root="$TMP/debian-header-root"
+mkdir -p "$header_root/usr/lib/gcc/i686-linux-gnu/10" "$header_root/usr/include/c++/10"
+: >"$header_root/usr/include/c++/10/vector"
+gcc10_trace="$TMP/gcc10-header.trace"
+printf '. %s\n' "$header_root/usr/lib/gcc/i686-linux-gnu/10/../../../../include/c++/10/vector" >"$gcc10_trace"
+v0232_node_trace_has_gcc10_vector "$gcc10_trace" "$header_root/usr/include/c++/10/vector"
+gcc11_trace="$TMP/gcc11-header.trace"
+mkdir -p "$header_root/toolchain/usr/include/c++/11"
+: >"$header_root/toolchain/usr/include/c++/11/vector"
+printf '. %s\n' "$header_root/toolchain/usr/include/c++/11/vector" >"$gcc11_trace"
+if v0232_node_trace_has_gcc10_vector "$gcc11_trace" "$header_root/usr/include/c++/10/vector"; then
+  echo 'header trace accepted a GCC 11 vector header as Bullseye GCC 10' >&2
+  exit 1
+fi
 
 [[ "$(v0232_node_check_compiler_pair "$TMP/clang19" "$TMP/clangxx19")" == 'clang 19.1.7 i686-unknown-linux-gnu' ]]
 [[ "$(v0232_node_check_compiler_pair "$TMP/gcc13" "$TMP/gxx13")" == 'gcc 13.2.1 i686-linux-gnu' ]]

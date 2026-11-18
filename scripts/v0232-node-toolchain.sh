@@ -29,6 +29,15 @@ v0232_node_version_at_least() {
   [[ "$first" == "$minimum" ]]
 }
 
+v0232_node_trace_has_gcc10_vector() {
+  local trace=$1 expected=${2:-/usr/include/c++/10/vector} header resolved
+  [[ -s "$trace" ]] || return 1
+  header=$(awk '$NF ~ /\/vector$/ { print $NF; exit }' "$trace") || return 1
+  [[ -n "$header" ]] || return 1
+  resolved=$(readlink -f -- "$header") || return 1
+  [[ "$resolved" == "$expected" ]]
+}
+
 v0232_node_check_compiler_pair() {
   local cc=$1 cxx=$2 cc_info cxx_info cc_family cc_version cc_target cxx_family cxx_version cxx_target minimum label
   cc_info=$(v0232_node_compiler_info "$cc") || return 1
