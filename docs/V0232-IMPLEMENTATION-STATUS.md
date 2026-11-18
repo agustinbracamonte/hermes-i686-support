@@ -4,6 +4,8 @@ Updated 2026-11-18. Current checkpoint: PR #11 is open and unmerged on top of PR
 
 Parallel focused PRs remain separate and unmerged: PR #15 (`3e953fa78ac702130fb18f98f2af9293b1a2277e`) adds a PM-staged pnpm launcher test using explicitly selected Node v26.12.1, controlled PATH, and offline local-file install. Its latest safety fix treats the supplied Node store as read-only, stages pnpm outside it, and sets private TMPDIR/TMP/TEMP for PM and Node/pnpm subprocesses; direct and symlink fixtures for existing stores, `/tmp`, and `/var/tmp` pass. `tests/test-v0232-pnpm-wrapper-path.sh` and `tests/test-scripts.sh` pass; no Actions run or actual managed Node/i686 execution was performed. PR #16 (`36a07140cd58ed1a4b6fe99efdf1d5d6298a06d1`) adds an empty-span guard to the Node V8 copy patch; local patch and empty/non-empty copy fixtures pass. Neither follow-up changes the active PR #11 head or its run #25.
 
+Additional verifier follow-ups remain separate and unmerged: PR #17 (`e4607d4dc86de5e052e9d15c6c636e25c48e0216`), stacked on PR #14, requires an exact FFmpeg source-version banner and passes the FFmpeg-focused fixture plus `tests/test-scripts.sh`. PR #18 (`05ec032f2cdddb1b6dc649cff68e58f090cf0c96`, stacked on PR #3) adds a fail-closed native uv execution mode. Its static rerun against the exact Hermes source commit reused the existing uv archive and passed checksum, lock, ELF32, and bootstrap-pin checks; local x86_64 guards and the script suite pass. Neither PR provides native-i686 uv or FFmpeg execution evidence, and neither changes PR #11 or run #25.
+
 
 
 ## Pinned source
