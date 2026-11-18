@@ -64,8 +64,9 @@ sudo mount --make-rslave "$ROOTFS/dev"
 sudo mount --rbind /sys "$ROOTFS/sys"
 sudo mount --make-rslave "$ROOTFS/sys"
 
+CHROOT_STATUS=0
 sudo chroot "$ROOTFS" /usr/bin/env "CLANG_VERSION=$CLANG_VERSION" "CLANG_SHA256=$CLANG_SHA256" \
-  /bin/bash -euo pipefail -s <<'CHROOT'
+  /bin/bash -euo pipefail -s <<'CHROOT' || CHROOT_STATUS=$?
 export DEBIAN_FRONTEND=noninteractive
 export LC_ALL=C
 
@@ -114,8 +115,8 @@ case "$clang_target" in
 esac
 git config --global --add safe.directory /work/source
 mkdir -p /work/build/v0232-i686/results
-printf 'clang_package_version=%s\nclang_package_sha256=%s\ndebian_snapshot=%s\nlibc6=%s\nclang_target=%s\n' \
-  "$clang_package_version" "$actual_clang_sha" 20260912T092708Z "$libc_version" "$clang_target" \
+printf 'clang_package_version=%s\nclang_package_sha256=%s\nclang_package_sha256_expected=%s\ndebian_snapshot=%s\nlibc6=%s\nclang_target=%s\n' \
+  "$clang_package_version" "$actual_clang_sha" "$CLANG_SHA256" 20260912T092708Z "$libc_version" "$clang_target" \
   >/work/build/v0232-i686/results/system-packages.txt
 dpkg-query -W -f='${binary:Package}=${Version}\n' \
   build-essential binutils clang-19 gcc g++ libc6 make \
@@ -131,29 +132,41 @@ NODE_BIN=/work/build/v0232-i686/prefix/node-26.12.1/bin/node \
   bash scripts/verify-v0232-pnpm-wasm.sh --require-ia32
 CHROOT
 
-for manifest in \
+MANIFESTS=(
   "$BUILD_ROOT/v0232-i686/results/system-packages.txt" \
   "$BUILD_ROOT/v0232-i686/results/cpython-3.14.9.txt" \
-  "$BUILD_ROOT/v0232-i686/results/node-26.12.1.txt"; do
-  [[ -s "$manifest" ]] || die "missing build evidence: $manifest"
-  cat "$manifest"
+  "$BUILD_ROOT/v0232-i686/results/node-26.12.1.txt"
+)
+for manifest in "${MANIFESTS[@]}"; do
+  if [[ -s "$manifest" ]]; then
+    printf '\n===== %s =====\n' "$(basename "$manifest")"
+    cat "$manifest"
+  fi
 done
 
-if [[ -n "$(printenv GITHUB_STEP_SUMMARY 2>/dev/null || true)" ]]; then
+SUMMARY_PATH=$(printenv GITHUB_STEP_SUMMARY 2>/dev/null || true)
+if [[ -n "$SUMMARY_PATH" ]]; then
   {
-    printf '# Hermes v0.23.2 native i686 runtime build\n\n'
-    printf 'Built serially in a disposable Debian 11 i386 chroot on a GitHub-hosted x86_64 runner. No build binaries were uploaded. This does not validate B10 memory headroom or Púlsar staging behavior.\n\n'
-    for manifest in \
-      "$BUILD_ROOT/v0232-i686/results/system-packages.txt" \
-      "$BUILD_ROOT/v0232-i686/results/cpython-3.14.9.txt" \
-      "$BUILD_ROOT/v0232-i686/results/node-26.12.1.txt"; do
+    printf '# Hermes v0.23.2 i686 runtime build attempt\n\n'
+    printf 'Disposable Debian 11 i386 chroot on a GitHub-hosted x86_64 runner. No build binaries are uploaded; this does not validate B10 memory headroom or Púlsar staging behavior.\n\n'
+    for manifest in "${MANIFESTS[@]}"; do
+      [[ -s "$manifest" ]] || continue
       printf '~~~text\n'
       cat "$manifest"
       printf '~~~\n\n'
     done
-    printf 'The pnpm WASM verification ran against Node with process.arch=ia32 and completed its offline local-file install.\n'
-  } >>"$(printenv GITHUB_STEP_SUMMARY)"
+    if [[ "$CHROOT_STATUS" == 0 ]]; then
+      printf 'runtime_build=PASS\npnpm_wasm=PASS;process.arch=ia32;offline_local_file_install=PASS\n'
+    else
+      printf 'runtime_build=FAILED;chroot_exit=%s\n' "$CHROOT_STATUS"
+    fi
+  } >>"$SUMMARY_PATH"
 fi
+
+[[ "$CHROOT_STATUS" == 0 ]] || die "i686 runtime build failed inside the disposable chroot (exit $CHROOT_STATUS)"
+for manifest in "${MANIFESTS[@]}"; do
+  [[ -s "$manifest" ]] || die "missing build evidence: $manifest"
+done
 
 cleanup
 trap - EXIT
