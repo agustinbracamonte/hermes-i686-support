@@ -150,7 +150,41 @@ class Binary {
     return Binary(
         std::make_shared<std::vector<uint8_t>>(span.begin(), span.end()));
   }
+
+ private:
+  std::shared_ptr<std::vector<uint8_t>> bytes_;
+  explicit Binary(std::shared_ptr<std::vector<uint8_t>> bytes)
+      : bytes_(bytes) {}
 };
+CPP
+cat >"$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc" <<'CPP'
+    auto cachedScriptIt =
+        std::find_if(m_cachedScripts.begin(), m_cachedScripts.end(),
+                     [&scriptId](const CachedScript& cachedScript) {
+                       return cachedScript.scriptId == scriptId;
+                     });
+    if (cachedScriptIt != m_cachedScripts.end()) {
+      *scriptSource = cachedScriptIt->source;
+      *bytecode = protocol::Binary::fromSpan(v8::MemorySpan<const uint8_t>(
+          cachedScriptIt->bytecode.begin(), cachedScriptIt->bytecode.size()));
+      return Response::Success();
+    }
+#if V8_ENABLE_WEBASSEMBLY
+  if (span.size() > kWasmBytecodeMaxLength) {
+      return Response::ServerError(kWasmBytecodeExceedsTransferLimit);
+    }
+    *bytecode = protocol::Binary::fromSpan(span);
+  }
+#endif  // V8_ENABLE_WEBASSEMBLY
+  return Response::Success();
+  if (span.size() > kWasmBytecodeMaxLength) {
+    return Response::ServerError(kWasmBytecodeExceedsTransferLimit);
+  }
+  *bytecode = protocol::Binary::fromSpan(span);
+  return Response::Success();
+#else
+  return Response::ServerError("WebAssembly is disabled");
+#endif
 CPP
 patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
@@ -204,10 +238,20 @@ grep -Fq 'loc_.file_name()' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq 'loc_.line()' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq 'return stream.str();' "$patch_fixture/deps/v8/src/api/api.cc"
 grep -Fq '#else' "$patch_fixture/deps/v8/src/api/api.cc"
-grep -Fq 'std::make_shared<std::vector<uint8_t>>(span.begin(), span.end())' \
+grep -Fq '#if defined(__i386__) && defined(__linux__)' \
   "$patch_fixture/deps/v8/src/inspector/string-util.h"
-! grep -Fq 'v8::MemorySpan<const uint8_t>(span.begin(), span.size())' \
+grep -Fq '#if defined(__i386__) && defined(__linux__)' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc"
+grep -Fq 'return fromBytes(span.data(), span.size());' \
   "$patch_fixture/deps/v8/src/inspector/string-util.h"
+grep -Fq 'protocol::Binary::fromBytes(' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc"
+grep -Fq 'cachedScriptIt->bytecode.data(), cachedScriptIt->bytecode.size());' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc"
+[[ $(grep -Fc 'protocol::Binary::fromBytes(span.data(), span.size())' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc") -eq 2 ]]
+grep -Fq 'protocol::Binary::fromSpan(span)' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc"
 ! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
 "${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
   "$ROOT/tests/fixtures/node-ranges-split-compat.cpp" \
@@ -229,7 +273,13 @@ bit_cast_compiler=${CXX:-c++}
 "${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
   "$ROOT/tests/fixtures/node-v8-memory-span-compat.cpp" \
   -o "$TMP/node-v8-memory-span-compat"
-[[ $("$TMP/node-v8-memory-span-compat") == $'memory_span_nonempty_copy=PASS\nmemory_span_empty_copy=PASS' ]]
+expected_memory_span_output=$'memory_span_crdtp_nonempty_copy=PASS\nmemory_span_crdtp_empty_copy=PASS\nmemory_span_cached_nonempty_copy=PASS\nmemory_span_cached_empty_copy=PASS\nmemory_span_wasm_nonempty_copy=PASS\nmemory_span_wasm_empty_copy=PASS'
+[[ $("$TMP/node-v8-memory-span-compat") == "$expected_memory_span_output" ]]
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  -DHERMES_FORCE_NODE_I686_V8_MEMORY_SPAN_COMPAT \
+  "$ROOT/tests/fixtures/node-v8-memory-span-compat.cpp" \
+  -o "$TMP/node-v8-memory-span-i686-fallback"
+[[ $("$TMP/node-v8-memory-span-i686-fallback") == "$expected_memory_span_output" ]]
 mkdir -p "$TMP/legacy-cxx-headers"
 : >"$TMP/legacy-cxx-headers/bit"
 cat >"$TMP/legacy-cxx-headers/type_traits" <<'CPP'
@@ -287,6 +337,15 @@ grep -Fq 'ostringstream-rvalue-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node-v26.12.1-i686-v8-memory-span-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_v8_memory_span_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'v8-memory-span-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+for memory_span_case in \
+  memory_span_crdtp_nonempty_copy \
+  memory_span_crdtp_empty_copy \
+  memory_span_cached_nonempty_copy \
+  memory_span_cached_empty_copy \
+  memory_span_wasm_nonempty_copy \
+  memory_span_wasm_empty_copy; do
+  grep -Fq "$memory_span_case=PASS" "$ROOT/scripts/build-node-v0232-i686.sh"
+done
 grep -Fq 'node_patch_set_fingerprint' "$ROOT/scripts/build-node-v0232-i686.sh"
 sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
