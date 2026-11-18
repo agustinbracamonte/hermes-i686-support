@@ -245,6 +245,7 @@ probe_source_location() {
     cat "$probe_report"
   } >"$probe_report.tmp"
   mv -f -- "$probe_report.tmp" "$probe_report"
+  cat "$probe_report"
 }
 
 CC_INFO=$("$CC_BIN" --version | head -1)
@@ -273,15 +274,17 @@ configure_build() {
 
 compile_build() {
   cd "$BUILD"
-  env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u CONFIG_SITE \
+  env -u CFLAGS -u CPPFLAGS -u LDFLAGS -u CONFIG_SITE \
     LC_ALL=C TZ=UTC PATH="$(dirname "$NODE_PYTHON"):$PATH" PYTHON="$NODE_PYTHON" \
+    CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}" \
     MAKEFLAGS= make -j1
 }
 
 install_build() {
   cd "$BUILD"
-  env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u CONFIG_SITE \
+  env -u CFLAGS -u CPPFLAGS -u LDFLAGS -u CONFIG_SITE \
     LC_ALL=C TZ=UTC PATH="$(dirname "$NODE_PYTHON"):$PATH" PYTHON="$NODE_PYTHON" \
+    CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}" \
     MAKEFLAGS= make -j1 install
 }
 
