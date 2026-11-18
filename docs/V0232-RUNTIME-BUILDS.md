@@ -87,16 +87,18 @@ The script verifies SHA-256 and npm SHA-512 integrity, proves the regular wrappe
 
 Hermes PM currently depends on its managed Node package for pnpm. Until Node 26.12.1 is built, ELF32-verified, and pinned in the private staging lock, this work can cross-stage the pnpm WASM artifact itself but cannot claim a complete pnpm dependency closure or full PM install on i686.
 
-The PM cross-stage harness can also exercise the actual generated `bin/pnpm` wrapper with a PM-managed Node. This is optional unless a Node executable is supplied, and it refuses a Node path outside the explicitly selected runtime store. Pass both paths explicitly to avoid inheriting a runtime store accidentally. Use only an isolated staging store because the test stages pnpm into it; provide the already-verified WASM archive instead of redownloading it:
+The PM cross-stage harness can also exercise the actual generated `bin/pnpm` wrapper with a PM-managed Node. This is optional unless a Node executable is supplied, and it refuses a Node path outside the explicitly selected `--node-store`. That store is read-only: the harness stages pnpm into a private temporary directory outside it, ignores caller-controlled `TMPDIR`, and resolves symlinked store paths before choosing the temporary base. Supply the already-verified WASM archive instead of redownloading it:
 
 ~~~bash
 export PNPM_WASM_ARCHIVE=/srv/hermes-staging/artifacts/pnpm-wasm-12.15.0.tgz
-export PNPM_NODE_BIN=/absolute/path/to/node-inside-staging-store
+export PNPM_NODE_BIN=/srv/hermes-staging/tools/node/26.12.1/bin/node
 scripts/test-v0232-pnpm-wasm-pm-stage.sh /srv/hermes-staging/hermes-agent \
-  --runtime-dir /srv/hermes-staging/tools --require-ia32
+  --node-store /srv/hermes-staging/tools --require-ia32
 ~~~
 
 That mode checks the exact Node version and `process.arch`; `--require-ia32` also requires ELF32/EM_386. It puts a verified Node symlink first in a clean PATH, runs `bin/pnpm --version` and an offline local-file install through the staged wrapper, then confirms the installed fixture can load. `tests/test-v0232-pnpm-wrapper-path.sh` uses a mock Node to verify PATH precedence and argument forwarding without claiming a target runtime. Native i686 proof still requires a real ELF32 Node in isolated i686 staging.
+
+The read-only-store regression fixture passes both a pre-existing Node store and a symlink to it, points `TMPDIR` at each supplied store, and confirms the runner selects its own temporary path outside the store without changing any store file hashes. It mocks the Hermes source/PM subprocess boundary; it validates path isolation, not an actual PM stage or native Node execution.
 
 ## Offline wheel/lock reconciliation
 
@@ -128,6 +130,7 @@ The 101-package plan, 92 reportedly verified wheels, nine reported gaps, and iso
 - Both runtime scripts' --prepare-only paths passed with nonexistent compiler paths after source verification/extraction; repeated runs reused checkpoints. Their --preflight-only paths rejected the x86_64 ELF64 process before build.
 - scripts/verify-v0232-pnpm-wasm.sh with the actual official npm tarballs — pass on Node v24.22.1, process.arch=x64; it ran pnpm 12.15.0 and completed an offline local-file install.
 - scripts/test-v0232-pnpm-wasm-pm-stage.sh — pass against the patched v0.23.2 checkout and the already downloaded WASM tarball. PM downloaded it from loopback, verified the pinned SHA-256, installed the store entry and ran the shared ELF scan; it did not execute Node or pnpm.
+- tests/test-v0232-pnpm-wrapper-path.sh and tests/test-scripts.sh — pass after adding the pre-existing/symlinked-store write-isolation fixture; the fixture points `TMPDIR` at the Node store and verifies its file hashes remain unchanged. This is shell-runner fixture evidence, not a PM stage or native i686 execution result.
 - tests/test-v0232-patchset.sh — pass against a clean checkout of the exact Hermes commit. The ordered patch series applied and 103 focused PM core/install/doctor/store/downloader/pnpm tests passed; one macOS-only case was skipped on Linux.
 
 These checks establish source, hash, PM staging, and host-side WASM behavior. Hosted runs #4–#13 built and smoke-tested CPython ELF32 in disposable Debian i386 userland; run #13's binary SHA-256 is `063c67ee07488c9e6306692997dab7866315dca244b13d7b8869f7536180db43`. Run #13 confirmed that Clang selected the intended Bullseye GCC 10 vector header via a noncanonical path that resolves to `/usr/include/c++/10/vector`; the exact-string assertion caused a false negative. The current fix normalizes the path and has synthetic GCC 10/GCC 11 fixtures. Node, pnpm WASM execution under ia32, and full Hermes PM closure remain unverified. The local development environment is x86_64 and its GCC targets x86_64, so no local target build was attempted. The staging-only 92 wheel artifacts reported by Púlsar were not downloaded, rebuilt, or inspected.

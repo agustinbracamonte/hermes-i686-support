@@ -73,18 +73,73 @@ grep -Fq "managed-node <$entry/package/dist/pnpm.mjs> <install> <--offline> <--i
 
 help=$("$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh" --help)
 grep -Fq -- '--node-bin PATH' <<<"$help"
+grep -Fq -- '--node-store PATH' <<<"$help"
 missing_node=$("$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh" /tmp/untrusted-checkout --require-ia32 2>&1 || true)
 grep -Fq -- '--require-ia32 requires --node-bin or PNPM_NODE_BIN' <<<"$missing_node"
 missing_store=$(PNPM_NODE_BIN=/tmp/untrusted-runtime/node \
   "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh" /tmp/untrusted-checkout 2>&1 || true)
-grep -Fq 'explicit isolated --runtime-dir store' <<<"$missing_store"
+grep -Fq 'explicit isolated --node-store' <<<"$missing_store"
 missing_node_for_store=$("$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh" \
-  /tmp/untrusted-checkout --runtime-dir /tmp/untrusted-runtime 2>&1 || true)
-grep -Fq -- '--runtime-dir requires --node-bin or PNPM_NODE_BIN' <<<"$missing_node_for_store"
+  /tmp/untrusted-checkout --node-store /tmp/untrusted-runtime 2>&1 || true)
+grep -Fq -- '--node-store requires --node-bin or PNPM_NODE_BIN' <<<"$missing_node_for_store"
 relative_store=$(PNPM_NODE_BIN=/tmp/untrusted-runtime/node \
   "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh" /tmp/untrusted-checkout \
-  --runtime-dir relative/runtime 2>&1 || true)
-grep -Fq -- '--runtime-dir must be an absolute path' <<<"$relative_store"
+  --node-store relative/runtime 2>&1 || true)
+grep -Fq -- '--node-store must be an absolute path' <<<"$relative_store"
+
+# Mock the shell runner around a pre-existing Node store and a symlink to that
+# store. The runner must pass its own mktemp child to PM in both cases, and it
+# must leave every file in the supplied Node store untouched.
+mock_bin="$TMP/mock-bin"
+fake_checkout="$TMP/fake-checkout"
+node_store="$TMP/preexisting-node-store"
+node_store_link="$TMP/node-store-link"
+mkdir -p "$mock_bin" "$fake_checkout/.git" "$node_store"
+printf 'verified fixture archive\n' >"$TMP/pnpm-wasm.tgz"
+printf 'fixture node\n' >"$node_store/node"
+chmod 755 "$node_store/node"
+ln -s "$node_store" "$node_store_link"
+cat >"$mock_bin/git" <<'GIT'
+#!/usr/bin/env bash
+[[ "$1" == -C && "$3" == rev-parse && "$4" == HEAD ]] || exit 97
+printf 'ae2a81ccc00e9b7c06301523e5bb09608397149c\n'
+GIT
+cat >"$mock_bin/python" <<'PYTHON'
+#!/bin/sh
+{
+  printf 'runtime=%s\n' "$HERMES_RUNTIME_DIR"
+  printf 'node_store=%s\n' "$PNPM_NODE_STORE"
+} >"$PNPM_TEST_RECORD"
+PYTHON
+chmod 755 "$mock_bin/git" "$mock_bin/python"
+store_snapshot() {
+  find "$node_store" -type f -print0 | sort -z | xargs -0 -r sha256sum
+}
+before_store=$(store_snapshot)
+for selected_store in "$node_store" "$node_store_link"; do
+  record="$TMP/runner-record"
+  PATH="$mock_bin:$PATH" TMPDIR="$selected_store" HERMES_PYTHON="$mock_bin/python" \
+    PNPM_WASM_ARCHIVE="$TMP/pnpm-wasm.tgz" PNPM_TEST_RECORD="$record" \
+    "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh" "$fake_checkout" \
+    --node-bin "$selected_store/node" --node-store "$selected_store"
+  runtime=$(sed -n 's/^runtime=//p' "$record")
+  passed_store=$(sed -n 's/^node_store=//p' "$record")
+  stage_root=${runtime%/tools}
+  case "$stage_root" in
+    /tmp/hermes-pnpm-stage.*|/var/tmp/hermes-pnpm-stage.*) ;;
+    *) echo "runner used an unexpected temp path: $runtime" >&2; exit 1 ;;
+  esac
+  [[ "$passed_store" == "$selected_store" ]]
+  [[ "$runtime" != "$selected_store" ]]
+  [[ ! -e "$runtime" ]]
+  [[ "$stage_root" != "$(realpath "$selected_store")"* ]]
+  [[ "$(store_snapshot)" == "$before_store" ]]
+done
+grep -Fq 'HERMES_RUNTIME_DIR="$TMP/tools"' "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
+grep -Fq 'store = Path(os.environ["HERMES_RUNTIME_DIR"]).resolve()' \
+  "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
+! grep -Eq 'HERMES_RUNTIME_DIR=.*PNPM_NODE_STORE|mkdir[^\n]*PNPM_NODE_STORE' \
+  "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh"
 
 python3 - "$ROOT/scripts/test-v0232-pnpm-wasm-pm-stage.sh" <<'PY'
 from pathlib import Path
@@ -96,4 +151,4 @@ start = next(i for i, line in enumerate(lines) if line.endswith("<<'PY'")) + 1
 end = next(i for i in range(start, len(lines)) if lines[i] == "PY")
 compile("\n".join(lines[start:end]), str(path), "exec")
 PY
-echo 'pnpm managed Node wrapper: PASS (path precedence and argv forwarding)'
+echo 'pnpm managed Node wrapper: PASS (path precedence, argv forwarding, and read-only Node store staging)'

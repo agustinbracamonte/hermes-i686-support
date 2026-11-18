@@ -5,13 +5,13 @@ set -euo pipefail
 
 usage() {
   cat <<'HELP'
-Usage: test-v0232-pnpm-wasm-pm-stage.sh PATCHED_HERMES_V0232_CHECKOUT [--node-bin PATH --runtime-dir PATH] [--require-ia32]
+Usage: test-v0232-pnpm-wasm-pm-stage.sh PATCHED_HERMES_V0232_CHECKOUT [--node-bin PATH --node-store PATH] [--require-ia32]
 
 Cross-stages the already-verified pnpm WASM archive through PM. With --node-bin,
 also executes the staged pnpm launchers and an offline local-file install via
-the Node executable resolved from an explicit, isolated --runtime-dir store
-containing that Node. This test stages pnpm into that same store. Node must be
-v26.12.1.
+the Node executable resolved from an explicit, isolated --node-store containing
+that Node. The supplied node store is read-only; pnpm is staged in a private
+temporary directory owned by this script. Node must be v26.12.1.
 --require-ia32 additionally requires process.arch=ia32 for native staging tests.
 Set PNPM_WASM_ARCHIVE to the verified archive; this script does not download it.
 HELP
@@ -30,7 +30,7 @@ shift
 PYTHON=${HERMES_PYTHON:-python3}
 PNPM_NODE_BIN=${PNPM_NODE_BIN:-}
 PNPM_REQUIRE_IA32=0
-PNPM_RUNTIME_STORE=
+PNPM_NODE_STORE=${PNPM_NODE_STORE:-}
 while (($#)); do
   case "$1" in
     --node-bin)
@@ -38,9 +38,9 @@ while (($#)); do
       PNPM_NODE_BIN=$2
       shift 2
       ;;
-    --runtime-dir)
-      [[ $# -ge 2 && -n "$2" ]] || { echo '--runtime-dir requires a path' >&2; exit 2; }
-      PNPM_RUNTIME_STORE=$2
+    --node-store)
+      [[ $# -ge 2 && -n "$2" ]] || { echo '--node-store requires a path' >&2; exit 2; }
+      PNPM_NODE_STORE=$2
       shift 2
       ;;
     --require-ia32)
@@ -54,16 +54,16 @@ if (( PNPM_REQUIRE_IA32 )) && [[ -z "$PNPM_NODE_BIN" ]]; then
   echo '--require-ia32 requires --node-bin or PNPM_NODE_BIN' >&2
   exit 2
 fi
-if [[ -n "$PNPM_NODE_BIN" && -z "$PNPM_RUNTIME_STORE" ]]; then
-  echo 'PM-managed Node execution requires an explicit isolated --runtime-dir store' >&2
+if [[ -n "$PNPM_NODE_BIN" && -z "$PNPM_NODE_STORE" ]]; then
+  echo 'Node execution requires an explicit isolated --node-store' >&2
   exit 2
 fi
-if [[ -n "$PNPM_RUNTIME_STORE" && -z "$PNPM_NODE_BIN" ]]; then
-  echo '--runtime-dir requires --node-bin or PNPM_NODE_BIN' >&2
+if [[ -n "$PNPM_NODE_STORE" && -z "$PNPM_NODE_BIN" ]]; then
+  echo '--node-store requires --node-bin or PNPM_NODE_BIN' >&2
   exit 2
 fi
-if [[ -n "$PNPM_RUNTIME_STORE" && "$PNPM_RUNTIME_STORE" != /* ]]; then
-  echo '--runtime-dir must be an absolute path' >&2
+if [[ -n "$PNPM_NODE_STORE" && "$PNPM_NODE_STORE" != /* ]]; then
+  echo '--node-store must be an absolute path' >&2
   exit 2
 fi
 ARCHIVE=${PNPM_WASM_ARCHIVE:?set PNPM_WASM_ARCHIVE to the verified @pnpm/wasm 12.15.0 archive}
@@ -72,12 +72,41 @@ PIN="ae2a81ccc00e9b7c06301523e5bb09608397149c"
 [[ "$(git -C "$UPSTREAM" rev-parse HEAD)" == "$PIN" ]] || { echo "input must be exact commit $PIN" >&2; exit 1; }
 [[ -f "$ARCHIVE" ]] || { echo "archive not found: $ARCHIVE" >&2; exit 1; }
 
-TMP=$(mktemp -d)
+NODE_STORE_REAL=
+if [[ -n "$PNPM_NODE_STORE" ]]; then
+  NODE_STORE_REAL=$(realpath -e -- "$PNPM_NODE_STORE") || {
+    echo 'could not resolve --node-store' >&2
+    exit 2
+  }
+  [[ -d "$NODE_STORE_REAL" ]] || { echo '--node-store is not a directory' >&2; exit 2; }
+  case "$NODE_STORE_REAL" in
+    /usr|/usr/*|/bin|/bin/*|/sbin|/sbin/*)
+      echo '--node-store must not be a system runtime directory' >&2
+      exit 2
+      ;;
+  esac
+fi
+
+# Ignore caller-controlled TMPDIR so it cannot redirect staging into the
+# supplied Node store. Also skip a candidate base nested inside that store.
+TMP_BASE=
+for candidate in /tmp /var/tmp; do
+  candidate_real=$(realpath -e -- "$candidate") || continue
+  [[ -d "$candidate_real" && -w "$candidate_real" ]] || continue
+  if [[ -n "$NODE_STORE_REAL" && ( "$NODE_STORE_REAL" == / || \
+        "$candidate_real" == "$NODE_STORE_REAL" || \
+        "$candidate_real" == "$NODE_STORE_REAL/"* ) ]]; then
+    continue
+  fi
+  TMP_BASE=$candidate_real
+  break
+done
+[[ -n "$TMP_BASE" ]] || { echo 'no safe temporary directory outside --node-store' >&2; exit 2; }
+TMP=$(mktemp -d "$TMP_BASE/hermes-pnpm-stage.XXXXXX")
 trap 'rm -rf -- "$TMP"' EXIT
-RUNTIME_DIR=${PNPM_RUNTIME_STORE:-"$TMP/tools"}
-mkdir -p "$RUNTIME_DIR"
-HERMES_HOME="$TMP/home" HERMES_RUNTIME_DIR="$RUNTIME_DIR" \
-  PNPM_NODE_BIN="$PNPM_NODE_BIN" PNPM_REQUIRE_IA32="$PNPM_REQUIRE_IA32" \
+HERMES_HOME="$TMP/home" HERMES_RUNTIME_DIR="$TMP/tools" \
+  PNPM_NODE_BIN="$PNPM_NODE_BIN" PNPM_NODE_STORE="$PNPM_NODE_STORE" \
+  PNPM_REQUIRE_IA32="$PNPM_REQUIRE_IA32" \
   "$PYTHON" - "$UPSTREAM" "$ARCHIVE" <<'PY'
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
@@ -189,11 +218,19 @@ try:
         node = node.resolve(strict=True)
     except OSError as exc:
         raise SystemExit(f"could not resolve PM-managed Node: {exc}")
-    store = Path(os.environ["HERMES_RUNTIME_DIR"]).resolve()
     try:
-        node.relative_to(store)
+        node_store = Path(os.environ["PNPM_NODE_STORE"]).resolve(strict=True)
+    except OSError as exc:
+        raise SystemExit(f"could not resolve --node-store: {exc}")
+    if not node_store.is_dir():
+        raise SystemExit("Node store is not a directory")
+    system_roots = {Path(root).resolve() for root in ("/", "/usr", "/bin", "/sbin")}
+    if any(node_store == root or root in node_store.parents for root in system_roots):
+        raise SystemExit("Node store must be an isolated non-system runtime store")
+    try:
+        node.relative_to(node_store)
     except ValueError:
-        raise SystemExit("Node executable must resolve inside HERMES_RUNTIME_DIR")
+        raise SystemExit("Node executable must resolve inside the read-only --node-store")
     if not node.is_file() or not os.access(node, os.X_OK):
         raise SystemExit("PM-managed Node is not an executable file")
     if node.name != "node":
