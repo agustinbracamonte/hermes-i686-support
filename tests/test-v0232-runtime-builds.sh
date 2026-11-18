@@ -24,7 +24,7 @@ grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 patch_fixture="$TMP/node-source"
 mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl" \
   "$patch_fixture/deps/v8/src/base" "$patch_fixture/deps/v8/src/strings" \
-  "$patch_fixture/src/tracing" "$patch_fixture/src"
+  "$patch_fixture/deps/v8/src/api" "$patch_fixture/src/tracing" "$patch_fixture/src"
 cat >"$patch_fixture/src/node_options.cc" <<'CPP'
   inspect_publish_uid.console = false;
   inspect_publish_uid.http = false;
@@ -126,6 +126,17 @@ cat >"$patch_fixture/deps/v8/src/base/macros.h" <<'CPP'
 
 }  // namespace v8::base
 CPP
+cat >"$patch_fixture/deps/v8/src/api/api.cc" <<'CPP'
+
+std::string SourceLocation::ToString() const {
+  if (!*this) return {};
+  return (std::ostringstream{} << Function() << '@' << FileName() << ':'
+                               << Line())
+      .str();
+}
+
+}  // namespace v8
+CPP
 patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
@@ -138,6 +149,10 @@ patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
 grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
 [[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
 grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
@@ -163,6 +178,10 @@ grep -Fq 'defined(__i386__) && defined(__clang__) && !defined(__cpp_lib_bit_cast
   "$patch_fixture/deps/v8/src/base/macros.h"
 grep -Fq 'return __builtin_bit_cast(Dest, source);' "$patch_fixture/deps/v8/src/base/macros.h"
 ! grep -Fq 'return std::bit_cast<Dest, Source>(source);' "$patch_fixture/deps/v8/src/base/macros.h"
+grep -Fq 'defined(__i386__) && defined(__clang__)' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'std::ostringstream stream;' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'return stream.str();' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq '#else' "$patch_fixture/deps/v8/src/api/api.cc"
 ! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
 "${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
   "$ROOT/tests/fixtures/node-ranges-split-compat.cpp" \
@@ -172,6 +191,15 @@ bit_cast_compiler=${CXX:-c++}
 "$bit_cast_compiler" -std=c++20 -O2 -Wall -Wextra -Werror \
   "$ROOT/tests/fixtures/node-bit-cast-compat.cpp" -o "$TMP/node-bit-cast-standard"
 "$TMP/node-bit-cast-standard"
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$ROOT/tests/fixtures/node-ostringstream-rvalue-compat.cpp" \
+  -o "$TMP/node-ostringstream-standard"
+"$TMP/node-ostringstream-standard"
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  -DHERMES_FORCE_NODE_I686_OSSTREAM_COMPAT \
+  "$ROOT/tests/fixtures/node-ostringstream-rvalue-compat.cpp" \
+  -o "$TMP/node-ostringstream-i686-fallback"
+"$TMP/node-ostringstream-i686-fallback"
 mkdir -p "$TMP/legacy-cxx-headers"
 : >"$TMP/legacy-cxx-headers/bit"
 cat >"$TMP/legacy-cxx-headers/type_traits" <<'CPP'
@@ -189,6 +217,10 @@ patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
 patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
 patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
@@ -215,6 +247,9 @@ grep -Fq 'node-v26.12.1-i686-bit-cast-compat.patch' "$ROOT/scripts/build-node-v0
 grep -Fq 'node_i686_build_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_ranges_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_bit_cast_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-v26.12.1-i686-ostringstream-rvalue-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_ostringstream_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'ostringstream-rvalue-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_patch_set_fingerprint' "$ROOT/scripts/build-node-v0232-i686.sh"
 sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
@@ -223,6 +258,7 @@ sed -n '/^install_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
 grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-ranges-split-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-bit-cast-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-ostringstream-rvalue-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.trace' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'C++ standard-library selection trace (Bullseye vector header missing)' "$ROOT/scripts/build-node-v0232-i686.sh"
