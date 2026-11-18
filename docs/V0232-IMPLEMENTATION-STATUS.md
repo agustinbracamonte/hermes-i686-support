@@ -106,7 +106,7 @@ Executed in this work session:
 | Native CPython/Node i686 builds and pnpm WASM on i686 | NOT RUN | The build shell/compiler are ELF64/x86_64. Build scripts fail closed; Node's x86 target is Experimental upstream. |
 | Full PM install, Python wheels, Node/npm, gateway | NOT RUN | No Node i686 artifact/lock row or complete dependency closure exists here. The 92 reported wheels were not downloaded again and no full install was attempted. |
 
-The host for this implementation is Linux x86_64. The test environment was built with the checkout's `pm.build_env` using bootstrap CPython 3.12.14 and the managed CPython 3.14.9 test interpreter. A passing x86_64 or fixture test is not native i686 evidence. Use an isolated Debian 11 i386 staging image/device for the remaining runtime gates in `V0232-ACCEPTANCE.md`. Debian 11's default GCC 10.2 is below Node 26's requirement; the Clang 19.1 i386 package is only a research candidate until its source, signed package metadata, and checksum are verified.
+The host for this implementation is Linux x86_64. The test environment was built with the checkout's `pm.build_env` using bootstrap CPython 3.12.14 and the managed CPython 3.14.9 test interpreter. A passing x86_64 or fixture test is not native i686 evidence. Use an isolated Debian 11 i386 staging image/device for the remaining runtime gates in `V0232-ACCEPTANCE.md`. Debian 11's default GCC 10.2 is below Node 26's requirement. Bullseye security's Clang 19.1 i386 package and signed index digest are verified at metadata level; actual `.deb` bytes and compiler execution remain pending because this host's proxy blocks the archive endpoint.
 
 ## Next engineering milestones
 
