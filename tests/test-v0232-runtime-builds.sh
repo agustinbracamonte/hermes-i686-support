@@ -230,6 +230,7 @@ for args in (
     ("gcc12", "gcc", "12.4.0", "i686-linux-gnu"),
     ("gccx64", "gcc", "13.2.1", "x86_64-linux-gnu"),
     ("gccwin", "gcc", "13.2.1", "i686-w64-mingw32"),
+    ("gccnonlinux", "gcc", "13.2.1", "i686-nonlinux-gnu"),
 ):
     compiler(*args)
 PY
@@ -252,6 +253,11 @@ fi
 v0232_assert_i686_compiler "$TMP/gcc13"
 set +e
 output=$(v0232_assert_i686_compiler "$TMP/gccwin" 2>&1)
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'not Linux i686'* ]]
+set +e
+output=$(v0232_assert_i686_compiler "$TMP/gccnonlinux" 2>&1)
 status=$?
 set -e
 [[ $status -eq 1 && "$output" == *'not Linux i686'* ]]

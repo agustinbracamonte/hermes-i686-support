@@ -69,7 +69,7 @@ v0232_require_cpu_feature() {
 v0232_assert_i686_compiler() {
   local cc=$1 target
   target=$("$cc" -dumpmachine 2>/dev/null) || v0232_die "$cc cannot report its target triple"
-  [[ "$target" =~ ^i[3-6]86.*linux ]] || v0232_die "$cc targets '$target', not Linux i686"
+  [[ "$target" =~ ^i[3-6]86(-[^-]+)?-linux(-|$) ]] || v0232_die "$cc targets '$target', not Linux i686"
 }
 
 v0232_fingerprint() {
