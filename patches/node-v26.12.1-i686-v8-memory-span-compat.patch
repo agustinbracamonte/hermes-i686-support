@@ -1,12 +1,47 @@
 --- a/deps/v8/src/inspector/string-util.h
 +++ b/deps/v8/src/inspector/string-util.h
-@@ -53,7 +53,8 @@
-   String toBase64() const;
+@@ -54,4 +54,16 @@
    static Binary fromBase64(const String& base64, bool* success);
++#if defined(__i386__) && defined(__linux__)
++  static Binary fromBytes(const uint8_t* data, size_t size) {
++    auto bytes = std::make_shared<std::vector<uint8_t>>();
++    if (size != 0) bytes->assign(data, data + size);
++    return Binary(bytes);
++  }
++#endif
++
    static Binary fromSpan(v8_crdtp::span<uint8_t> span) {
--    return fromSpan(v8::MemorySpan<const uint8_t>(span.begin(), span.size()));
-+    return Binary(
-+        std::make_shared<std::vector<uint8_t>>(span.begin(), span.end()));
++#if defined(__i386__) && defined(__linux__)
++    return fromBytes(span.data(), span.size());
++#else
+     return fromSpan(v8::MemorySpan<const uint8_t>(span.begin(), span.size()));
++#endif
    }
-   static Binary fromSpan(v8::MemorySpan<const uint8_t> span) {
-     return Binary(
+--- a/deps/v8/src/inspector/v8-debugger-agent-impl.cc
++++ b/deps/v8/src/inspector/v8-debugger-agent-impl.cc
+@@ -1248,4 +1248,9 @@
+       *scriptSource = cachedScriptIt->source;
++#if defined(__i386__) && defined(__linux__)
++      *bytecode = protocol::Binary::fromBytes(
++          cachedScriptIt->bytecode.data(), cachedScriptIt->bytecode.size());
++#else
+       *bytecode = protocol::Binary::fromSpan(v8::MemorySpan<const uint8_t>(
+           cachedScriptIt->bytecode.begin(), cachedScriptIt->bytecode.size()));
++#endif
+       return Response::Success();
+@@ -1261,3 +1266,7 @@
+     }
++#if defined(__i386__) && defined(__linux__)
++    *bytecode = protocol::Binary::fromBytes(span.data(), span.size());
++#else
+     *bytecode = protocol::Binary::fromSpan(span);
++#endif
+   }
+@@ -1430,3 +1439,7 @@
+   }
++#if defined(__i386__) && defined(__linux__)
++  *bytecode = protocol::Binary::fromBytes(span.data(), span.size());
++#else
+   *bytecode = protocol::Binary::fromSpan(span);
++#endif
+   return Response::Success();
