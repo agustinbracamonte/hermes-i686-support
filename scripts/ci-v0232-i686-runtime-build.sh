@@ -42,7 +42,7 @@ sudo cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
 sudo tee "$ROOTFS/etc/apt/sources.list" >/dev/null <<EOF
 deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT bullseye main
-deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/$DEBIAN_SNAPSHOT bullseye-security main
+deb [check-valid-until=no] https://archive.debian.org/debian-security bullseye-security main
 EOF
 
 sudo mkdir -p "$ROOTFS/work/source" "$ROOTFS/work/build"
