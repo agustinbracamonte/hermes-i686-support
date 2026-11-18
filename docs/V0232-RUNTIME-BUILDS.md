@@ -1,6 +1,6 @@
 # Hermes v0.23.2 i686 runtime builds
 
-Updated 2026-11-17. This public workstream contains reproducible source-build procedures only. It has no compiled CPython/Node binaries, no wheelhouse, no Púlsar source, and no credentials.
+Updated 2026-11-18. This public workstream contains reproducible source-build procedures only. It has no compiled CPython/Node binaries, no wheelhouse, no Púlsar source, and no credentials.
 
 ## Locked source evidence
 
@@ -9,7 +9,7 @@ Updated 2026-11-17. This public workstream contains reproducible source-build pr
 | CPython 3.14.9 | Git tag object 17acf00d155cb8536eca1c3af3a8404db648e37f; commit ead82c07db1f111d613926ed1b6667411d768125; tree a0de950923dd481d2fd0f5bdc42ed9821763cbc4 | The build recipe fetches the tag from python/cpython and verifies the tag object, commit, tree, and clean checkout. python.org's source archive endpoint returned HTTP 403 here, so this work does not claim an official sdist SHA-256. |
 | Node 26.12.1 | Official source tarball https://nodejs.org/dist/v26.12.1/node-v26.12.1.tar.xz; tag commit bc2e01dcf6acd5cf7d169b5f26cf89abaaeb41f1 | Official SHASUMS256.txt and locally downloaded bytes agree on SHA-256 053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c. Tarball size: 62,570,464 bytes. |
 
-Node's own v26.12.1 BUILDING.md labels Linux x86 as Experimental and lists GCC >=13.2 or Clang >=19.1 as current Linux toolchains. No official Linux i686 runtime binary exists. The checked-in recipe intentionally uses GCC >=13.2 and native i686 userspace; it does not alter x64 or ARM64 pins.
+Node's own v26.12.1 BUILDING.md labels Linux x86 as Experimental and lists GCC >=13.2 or Clang >=19.1 as current Linux toolchains. No official Linux i686 runtime binary exists. The checked-in recipe accepts either minimum when C/C++ compiler family, version, and Linux i686 target agree; it does not alter x64 or ARM64 pins. Bullseye's default GCC 10.2 is too old. Debian's package index lists Clang 19.1.7 for bullseye i386, but Bullseye LTS ended on 2026-08-31 and this work has not yet downloaded or hash-verified that package. Treat it as a candidate toolchain source, not as a verified prerequisite.
 
 ## Serial, resumable build recipes
 
@@ -18,12 +18,13 @@ Scripts:
 - scripts/build-cpython-v0232-i686.sh
 - scripts/build-node-v0232-i686.sh
 - scripts/v0232-i686-build-common.sh
+- scripts/v0232-node-toolchain.sh
 
 The build root is HERMES_I686_BUILD_ROOT or .work/v0232-i686. It must be a dedicated path without spaces. Both runtimes use one root-wide flock, reject JOBS other than 1, run GNU make with -j1, and write per-step SHA-256 fingerprints for source, configure, compile, install, and smoke-test checkpoints. A completed checkpoint is skipped only when its fingerprint and expected output still match. Partial make output can resume by rerunning the same command. A changed source, toolchain, script, or configure flag requires a new build root; the scripts do not delete a prior build tree.
 
 The normal build refuses to run unless the shell itself is ELF32/EM_386 and the compiler targets i686. It does not select the target from uname -m. --prepare-only fetches/verifies sources without compiling and can run on a development x64 host. --preflight-only checks the native process ABI and toolchain before a build.
 
-On the isolated i686 staging machine, first install the compiler and CPython development dependencies using that machine's approved package source. CPython needs the usual OpenSSL, zlib, SQLite, libffi, bzip2, lzma, readline and ncurses development headers. The scripts do not install system packages or silently change a host. The exact system package snapshot remains a staging input and must be recorded alongside the result manifest.
+On the isolated i686 staging machine, first install the compiler and CPython development dependencies using that machine's approved package source. Use GCC >=13.2 or Clang >=19.1 for Node; Clang can be selected with `CC=clang-19 CXX=clang++-19`. CPython needs the usual OpenSSL, zlib, SQLite, libffi, bzip2, lzma, readline and ncurses development headers. The scripts do not install system packages or silently change a host. The exact system package snapshot remains a staging input and must be recorded alongside the result manifest.
 
 ~~~bash
 export HERMES_I686_BUILD_ROOT=/srv/hermes-i686-build/v0.23.2
@@ -34,6 +35,12 @@ scripts/build-node-v0232-i686.sh
 ~~~
 
 The Node recipe consumes the CPython 3.14.9 i686 interpreter produced in that same root. It configures --dest-cpu=ia32 --with-intl=full-icu, keeps the bundled full ICU source, builds serially, installs under the root, and checks the resulting Node ELF32 header, Node/npm execution, process.arch, Spanish locale data, shared WebAssembly memory, and worker_threads. Result manifests include source hashes, compiler/linker versions, architecture, and installed executable hashes.
+
+## Isolated build option
+
+GitHub documents standard hosted Linux runners as free for public repositories, with a standard runner exposing 4 CPUs and 16 GB RAM ([runner specs](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), [Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)). This repository is public. A candidate route is an ephemeral Debian 11 i386 userland/chroot on a hosted x86_64 Linux runner: if the kernel supports IA32 execution, the existing scripts can run under 32-bit Bash and build native ELF32 without changing B10. This route is not yet tested and would not establish B10 memory headroom or staging compatibility.
+
+Do not start a CI build until the Clang 19.1 package source, signature chain and package digest are recorded; Debian 11's LTS ended 2026-08-31. Any workflow must use no secrets, avoid uploading binaries, keep only non-sensitive test summaries/hashes, and discard the runner after the job. No build workflow is configured and no CI runtime build has started in this work session.
 
 ## pnpm 12.15.0 on i686
 
@@ -79,7 +86,7 @@ The 101-package plan, 92 reportedly verified wheels, nine reported gaps, and iso
 
 - CPython build script fetched v3.14.9 and verified the exact tag object, commit and tree. A second run reused the source checkpoint.
 - Node source tarball was downloaded from nodejs.org, matched the official SHASUMS256 entry, and the --prepare-only extraction/resume path passed twice using those verified bytes.
-- tests/test-v0232-runtime-builds.sh — pass: shell syntax, JOBS=2 rejection, bad Node archive hash rejection, ELF32/x64 fixtures, and checkpoint resume/fingerprint rejection.
+- tests/test-v0232-runtime-builds.sh — pass: shell syntax, JOBS=2 rejection, bad Node archive hash rejection, ELF32/x64 fixtures, checkpoint resume/fingerprint rejection, and synthetic compiler checks for GCC 13.2/Clang 19.1 acceptance plus outdated, mixed-family, or non-i686 rejection. These compiler fixtures do not prove a native build.
 - python3 tests/test-v0232-wheel-reconcile.py — pass: three local-fixture cases cover i686 tag/hash matching, a missing target wheel, a changed digest, and refusal to infer target tags from this x86_64 host.
 - Both runtime scripts' --prepare-only paths passed with nonexistent compiler paths after source verification/extraction; repeated runs reused checkpoints. Their --preflight-only paths rejected the x86_64 ELF64 process before build.
 - scripts/verify-v0232-pnpm-wasm.sh with the actual official npm tarballs — pass on Node v24.22.1, process.arch=x64; it ran pnpm 12.15.0 and completed an offline local-file install.
@@ -90,7 +97,7 @@ These checks establish source, hash, PM staging, and host-side WASM behavior. Th
 
 ## Next staging checks
 
-1. Run both preflights in the isolated ELF32/i686 userspace; ensure the compiler is GCC >=13.2 and the CPython source-build prerequisites are present.
+1. Verify an approved Clang 19.1 package/source and checksum for the Debian 11 i386 toolchain, then run both preflights in isolated ELF32/i686 userspace. GCC must be >=13.2 or Clang >=19.1; Debian 11's default GCC is insufficient for Node.
 2. Build CPython, then Node, serially; retain each result manifest and the source/system package records.
 3. Run verify-v0232-pnpm-wasm.sh --require-ia32 against the built Node. Capture memory use and check the offline install result.
 4. Have Púlsar validate those outputs in its staging environment and reconcile the Node pin into its real lock. No staging host was accessed by this public task.

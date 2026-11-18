@@ -8,7 +8,8 @@ trap 'rm -rf -- "$TMP"' EXIT
 
 bash -n "$ROOT/scripts/build-cpython-v0232-i686.sh" \
   "$ROOT/scripts/build-node-v0232-i686.sh" \
-  "$ROOT/scripts/v0232-i686-build-common.sh"
+  "$ROOT/scripts/v0232-i686-build-common.sh" \
+  "$ROOT/scripts/v0232-node-toolchain.sh"
 "$ROOT/scripts/build-cpython-v0232-i686.sh" --help >/dev/null
 "$ROOT/scripts/build-node-v0232-i686.sh" --help >/dev/null
 
@@ -47,11 +48,73 @@ for name, elf_class, machine in (("i686.elf", 1, 3), ("x64.elf", 2, 62)):
 PY
 
 source "$ROOT/scripts/v0232-i686-build-common.sh"
+source "$ROOT/scripts/v0232-node-toolchain.sh"
 [[ "$(v0232_elf_identity "$TMP/i686.elf")" == 'ELF32 little-endian Intel 80386' ]]
 if v0232_elf_identity "$TMP/x64.elf" >/dev/null; then
   echo 'ELF guard accepted a 64-bit fixture' >&2
   exit 1
 fi
+
+python3 - "$TMP" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+template = '''#!{python}
+import sys
+family, version, target = {family!r}, {version!r}, {target!r}
+if sys.argv[1] == "--version":
+    print(("Debian clang version " if family == "clang" else "gcc (GCC) ") + version)
+elif sys.argv[1] in ("-dumpfullversion", "-dumpversion"):
+    print(version)
+elif sys.argv[1] == "-dumpmachine":
+    print(target)
+else:
+    raise SystemExit(2)
+'''
+
+def compiler(name, family, version, target="i686-linux-gnu"):
+    path = root / name
+    path.write_text(template.format(
+        python=sys.executable, family=family, version=version, target=target,
+    ), encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+for args in (
+    ("clang19", "clang", "19.1.7", "i686-unknown-linux-gnu"),
+    ("clangxx19", "clang", "19.1.7", "i686-unknown-linux-gnu"),
+    ("clang190", "clang", "19.0.1", "i686-unknown-linux-gnu"),
+    ("gcc13", "gcc", "13.2.1", "i686-linux-gnu"),
+    ("gxx13", "gcc", "13.2.1", "i686-linux-gnu"),
+    ("gcc12", "gcc", "12.4.0", "i686-linux-gnu"),
+    ("gccx64", "gcc", "13.2.1", "x86_64-linux-gnu"),
+):
+    compiler(*args)
+PY
+
+[[ "$(v0232_node_check_compiler_pair "$TMP/clang19" "$TMP/clangxx19")" == 'clang 19.1.7 i686-unknown-linux-gnu' ]]
+[[ "$(v0232_node_check_compiler_pair "$TMP/gcc13" "$TMP/gxx13")" == 'gcc 13.2.1 i686-linux-gnu' ]]
+set +e
+output=$(v0232_node_check_compiler_pair "$TMP/clang190" "$TMP/clang190" 2>&1)
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'Clang >=19.1'* ]]
+set +e
+output=$(v0232_node_check_compiler_pair "$TMP/gcc12" "$TMP/gcc12" 2>&1)
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'GCC >=13.2'* ]]
+set +e
+output=$(v0232_node_check_compiler_pair "$TMP/clang19" "$TMP/gxx13" 2>&1)
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'families differ'* ]]
+set +e
+output=$(v0232_node_check_compiler_pair "$TMP/gccx64" "$TMP/gccx64" 2>&1)
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'not Linux i686'* ]]
 
 state="$TMP/checkpoints"
 mkdir -p "$state"
