@@ -1,6 +1,18 @@
 --- a/deps/zlib/zlib.gyp
 +++ b/deps/zlib/zlib.gyp
-@@ -220,4 +220,7 @@
+@@ -145,6 +145,9 @@
+             ['target_arch in "ia32 x64" and OS!="ios"', {
+               'defines': [ 'INFLATE_CHUNK_SIMD_SSE2' ],
+               'conditions': [
++                ['target_arch=="ia32"', {
++                  'cflags': [ '-msse2' ],
++                }],
+                 ['target_arch=="x64"', {
+                   'defines': [ 'INFLATE_CHUNK_READ_64LE' ],
+                 }],
+@@ -218,6 +221,9 @@
+               ],
+               'defines': [ 'DEFLATE_SLIDE_HASH_SSE2' ],
                'conditions': [
 +                ['target_arch=="ia32"', {
 +                  'cflags': [ '-msse2' ],
