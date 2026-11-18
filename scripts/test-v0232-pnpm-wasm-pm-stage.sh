@@ -196,18 +196,18 @@ try:
         raise SystemExit("Node executable must resolve inside HERMES_RUNTIME_DIR")
     if not node.is_file() or not os.access(node, os.X_OK):
         raise SystemExit("PM-managed Node is not an executable file")
+    if node.name != "node":
+        raise SystemExit("PM-managed Node path must name the node executable")
     if require_ia32 and machine_matches_binary(node, "linux-i686") is not True:
         raise SystemExit("--require-ia32 but PM-managed Node is not ELF32/EM_386")
 
     runtime_test = Path(os.environ["HERMES_HOME"]).parent / "pnpm-runtime-test"
     test_home = runtime_test / "home"
-    node_path = runtime_test / "path"
-    node_path.mkdir(parents=True)
+    runtime_test.mkdir(parents=True)
     test_home.mkdir(parents=True)
-    (node_path / "node").symlink_to(node)
     env = {
         "HOME": str(test_home),
-        "PATH": f"{node_path}:/usr/bin:/bin",
+        "PATH": f"{node.parent}:/usr/bin:/bin",
         "COREPACK_ENABLE_NETWORK": "0",
         "CI": "1",
         "NPM_CONFIG_USERCONFIG": "/dev/null",
