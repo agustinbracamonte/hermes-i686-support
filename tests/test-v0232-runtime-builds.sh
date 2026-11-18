@@ -177,9 +177,18 @@ for args in (
     ("gxx13", "gcc", "13.2.1", "i686-linux-gnu"),
     ("gcc12", "gcc", "12.4.0", "i686-linux-gnu"),
     ("gccx64", "gcc", "13.2.1", "x86_64-linux-gnu"),
+    ("gccwin", "gcc", "13.2.1", "i686-w64-mingw32"),
 ):
     compiler(*args)
 PY
+
+v0232_assert_i686_compiler "$TMP/gcc13"
+set +e
+output=$(v0232_assert_i686_compiler "$TMP/gccwin" 2>&1)
+status=$?
+set -e
+[[ $status -eq 1 && "$output" == *'not Linux i686'* ]]
+
 
 [[ "$(v0232_node_check_compiler_pair "$TMP/clang19" "$TMP/clangxx19")" == 'clang 19.1.7 i686-unknown-linux-gnu' ]]
 [[ "$(v0232_node_check_compiler_pair "$TMP/gcc13" "$TMP/gxx13")" == 'gcc 13.2.1 i686-linux-gnu' ]]
