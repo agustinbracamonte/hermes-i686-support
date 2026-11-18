@@ -1,0 +1,17 @@
+diff --git a/src/node_options.cc b/src/node_options.cc
+--- a/src/node_options.cc
++++ b/src/node_options.cc
+@@ -66,10 +66,10 @@ void DebugOptions::CheckOptions(std::vector<std::string>* errors,
+   inspect_publish_uid.console = false;
+   inspect_publish_uid.http = false;
+   for (const auto& entry : entries) {
+-    std::string_view destination(entry.data(), entry.size());
+-    if (destination == "stderr"sv) {
++    std::string destination(entry.begin(), entry.end());
++    if (destination == "stderr") {
+       inspect_publish_uid.console = true;
+-    } else if (destination == "http"sv) {
++    } else if (destination == "http") {
+       inspect_publish_uid.http = true;
+     } else {
+       errors->emplace_back("--inspect-publish-uid destination can be "

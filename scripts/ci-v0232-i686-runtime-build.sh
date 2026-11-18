@@ -138,6 +138,7 @@ MANIFESTS=(
   "$BUILD_ROOT/v0232-i686/results/node-cxx-header-selection.trace" \
   "$BUILD_ROOT/v0232-i686/results/node-cxx-header-selection.txt" \
   "$BUILD_ROOT/v0232-i686/results/node-source-location-probe.txt" \
+  "$BUILD_ROOT/v0232-i686/results/node-ranges-split-probe.txt" \
   "$BUILD_ROOT/v0232-i686/results/node-26.12.1.txt"
 )
 for manifest in "${MANIFESTS[@]}"; do
