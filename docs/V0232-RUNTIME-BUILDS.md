@@ -56,6 +56,12 @@ The first hosted run verified the signed Bullseye snapshot and created an i386 r
 
 ## Latest hosted run checkpoint (2026-11-18)
 
+### Run #16 active checkpoint (2026-11-18 10:30 UTC)
+
+PR #8 Actions run `44283199043` is active on the reviewed four-site Node/V8 allocation patch at source head `46db1b94c50accebaf5770fe7cf79f19d230c289`; job `134729030840` has completed setup and is still inside the workflow's single `Fetch the exact public PR source` step. GitHub does not expose partial logs for that step, so there is no new build or artifact result yet. Do not start a duplicate run while this one is active.
+
+The current PR #9 checkout (`eb377c2f05ac94ebf55501dd7f8cac236a93a231`, stacked on that PR #8 head) was rechecked locally: `tests/test-v0232-runtime-builds.sh`, `tests/test-scripts.sh`, and `git diff --check` all exited 0. These are x86_64-hosted fixture/static checks; they do not establish an i686 Node build or runtime result.
+
 PR #8 Actions run #15 (`44279810726`) ran against head `830227e15fd4c5b83e4669883836f81b05f66504`. The Clang `1:19.1.7-3~deb11u1` package SHA-256 `d52c7089346ebc4616d3e9e3bbee6eb0848455a9abb777746fdd32812ce981d3` matched the signed APT index. CPython 3.14.9 built and passed ELF32 smoke checks; executable SHA-256 `05fbaf89f0363cbb48759839791d91427338a7b302cd532965dd9d98292db747`. The normalized GCC 10 vector header check and C++20 source-location probe passed with pointer_size=4. Node compiled until `src/node_buffer.cc:588`, where Bullseye GCC 10 lacked `std::make_unique_for_overwrite`; no Node ELF, npm, or pnpm check completed.
 
 The source patch now replaces all four executable occurrences found in the pinned source (`encoding_binding.cc`, `node_buffer.cc`, V8 `vector.h`, and `owning-external-string-resource.h`) with equivalent default-initialized array allocations. The following copy/initialization writes the full range before use. Combined patch SHA-256: `79a312253fa32b9bfd1409b218462547b0b2897d26d230b6b0b97adf503c8e45`. Exact Node source dry-run/apply/reverse and local fixtures pass; the new patch has not yet been built.
@@ -117,7 +123,7 @@ These checks establish source, hash, PM staging, and host-side WASM behavior. Ho
 
 ## Next staging checks
 
-1. Retrieve PR #8 Actions run #16 after the four-site C++20 allocation patch is pushed. Continue to Node/npm ELF32, runtime library requirements, and pnpm WASM offline installation only after Node builds successfully. Do not treat the hosted runner as B10 staging evidence.
+1. Retrieve PR #8 Actions run #16 (`44283199043`) after it reaches a terminal state; it is currently active against the four-site C++20 allocation patch. Continue to Node/npm ELF32, runtime library requirements, and pnpm WASM offline installation only after Node builds successfully. Do not treat the hosted runner as B10 staging evidence.
 2. Build CPython, then Node, serially; retain each result manifest and the source/system package records.
 3. Run verify-v0232-pnpm-wasm.sh --require-ia32 against the built Node. Capture memory use and check the offline install result.
 4. Have Púlsar validate those outputs in its staging environment and reconcile the Node pin into its real lock. No staging host was accessed by this public task.
