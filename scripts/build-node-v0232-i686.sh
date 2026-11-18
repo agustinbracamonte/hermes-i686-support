@@ -102,7 +102,7 @@ TOOLCHAIN_ROOT="$ROOT/toolchain"
 CXX_HEADERS_DEB="$DOWNLOADS/${CXX_HEADERS_PACKAGE}_${CXX_HEADERS_VERSION}_${CXX_HEADERS_ARCH}.deb"
 CXX_HEADERS_ROOT="$TOOLCHAIN_ROOT/${CXX_HEADERS_PACKAGE}-${CXX_HEADERS_VERSION}"
 CXX_HEADERS_INCLUDE="$CXX_HEADERS_ROOT/usr/include/c++/11"
-CXX_HEADERS_MULTIARCH_INCLUDE="$CXX_HEADERS_ROOT/usr/include/i386-linux-gnu/c++/11"
+CXX_SOURCE_LOCATION_OVERLAY="$TOOLCHAIN_ROOT/source-location-overlay-gcc-11"
 mkdir -p "$STATE" "$DOWNLOADS" "$(dirname "$SOURCE")" "$PREFIX" "$RESULTS" "$TOOLCHAIN_ROOT"
 v0232_build_lock "$ROOT"
 
@@ -180,10 +180,9 @@ extract_cxx_headers_package() {
     rm -rf -- "$temporary"
     v0232_die "failed to extract the pinned C++ header package"
   fi
-  if [[ ! -s "$temporary/usr/include/c++/11/source_location" || \
-        ! -s "$temporary/usr/include/i386-linux-gnu/c++/11/bits/c++config.h" ]]; then
+  if [[ ! -s "$temporary/usr/include/c++/11/source_location" ]]; then
     rm -rf -- "$temporary"
-    v0232_die "pinned C++ header package is missing its source_location or i386 configuration header"
+    v0232_die "pinned C++ header package is missing its source_location header"
   fi
   if [[ -e "$CXX_HEADERS_ROOT" ]]; then
     if [[ ! -d "$CXX_HEADERS_ROOT" || -L "$CXX_HEADERS_ROOT" ]]; then
@@ -203,7 +202,39 @@ extract_cxx_headers_package() {
 
 verify_cxx_headers_tree() {
   [[ -s "$CXX_HEADERS_INCLUDE/source_location" ]] || v0232_die "missing extracted <source_location> header"
-  [[ -s "$CXX_HEADERS_MULTIARCH_INCLUDE/bits/c++config.h" ]] || v0232_die "missing extracted i386 libstdc++ configuration header"
+}
+
+prepare_source_location_overlay() {
+  local temporary
+  [[ -s "$CXX_HEADERS_INCLUDE/source_location" ]] || \
+    v0232_die "missing pinned GCC 11 source_location header"
+  if [[ -e "$CXX_SOURCE_LOCATION_OVERLAY" || -L "$CXX_SOURCE_LOCATION_OVERLAY" ]]; then
+    [[ -d "$CXX_SOURCE_LOCATION_OVERLAY" && ! -L "$CXX_SOURCE_LOCATION_OVERLAY" ]] || \
+      v0232_die "source_location overlay is not a regular directory: $CXX_SOURCE_LOCATION_OVERLAY"
+    if diff -q "$CXX_SOURCE_LOCATION_OVERLAY/source_location" \
+        "$CXX_HEADERS_INCLUDE/source_location" >/dev/null; then
+      v0232_log "reused verified source_location-only header overlay"
+      return 0
+    fi
+    v0232_die "existing source_location overlay differs from the pinned package; use a new build root"
+  fi
+  temporary=$(mktemp -d "$TOOLCHAIN_ROOT/.source-location-overlay.XXXXXX")
+  if ! install -m 0644 "$CXX_HEADERS_INCLUDE/source_location" "$temporary/source_location"; then
+    rm -rf -- "$temporary"
+    v0232_die "failed to create source_location-only header overlay"
+  fi
+  if ! mv -- "$temporary" "$CXX_SOURCE_LOCATION_OVERLAY"; then
+    rm -rf -- "$temporary"
+    v0232_die "failed to install source_location-only header overlay"
+  fi
+}
+
+verify_source_location_overlay() {
+  [[ -d "$CXX_SOURCE_LOCATION_OVERLAY" && ! -L "$CXX_SOURCE_LOCATION_OVERLAY" ]] || \
+    v0232_die "missing source_location-only header overlay"
+  diff -q "$CXX_SOURCE_LOCATION_OVERLAY/source_location" \
+    "$CXX_HEADERS_INCLUDE/source_location" >/dev/null || \
+    v0232_die "source_location overlay does not match the pinned package header"
 }
 
 CXX_HEADERS_PACKAGE_FINGERPRINT=$(v0232_fingerprint "$CXX_HEADERS_PACKAGE" "$CXX_HEADERS_VERSION" "$CXX_HEADERS_ARCH" "$CXX_HEADERS_URL" "$CXX_HEADERS_SHA256" "$SCRIPT_FINGERPRINT")
@@ -212,7 +243,35 @@ verify_cxx_headers_package
 CXX_HEADERS_TREE_FINGERPRINT=$(v0232_fingerprint "$CXX_HEADERS_PACKAGE_FINGERPRINT" "$SOURCE_FINGERPRINT" "$CXX_HEADERS_SHA256")
 v0232_checkpoint "$STATE" cxx-headers-extract "$CXX_HEADERS_TREE_FINGERPRINT" "$CXX_HEADERS_INCLUDE/source_location" extract_cxx_headers_package
 verify_cxx_headers_tree
-CXX_HEADER_FLAGS=(-nostdinc++ -isystem "$CXX_HEADERS_INCLUDE" -isystem "$CXX_HEADERS_MULTIARCH_INCLUDE")
+CXX_SOURCE_LOCATION_OVERLAY_FINGERPRINT=$(v0232_fingerprint "$CXX_HEADERS_TREE_FINGERPRINT" "$CXX_HEADERS_SHA256" "$SCRIPT_FINGERPRINT")
+v0232_checkpoint "$STATE" source-location-overlay "$CXX_SOURCE_LOCATION_OVERLAY_FINGERPRINT" "$CXX_SOURCE_LOCATION_OVERLAY/source_location" prepare_source_location_overlay
+verify_source_location_overlay
+CXX_HEADER_FLAGS=(-isystem "$CXX_SOURCE_LOCATION_OVERLAY")
+
+verify_cxx_header_selection() {
+  local trace="$RESULTS/node-cxx-header-selection.trace"
+  local report="$RESULTS/node-cxx-header-selection.txt"
+  if ! printf '#include <source_location>\n#include <vector>\n' | \
+      "$CXX_BIN" -std=c++20 -H "${CXX_HEADER_FLAGS[@]}" -x c++ -fsyntax-only - \
+      >/dev/null 2>"$trace"; then
+    v0232_die "failed to compile the source_location/Bullseye-header selection probe"
+  fi
+  grep -Fq "$CXX_SOURCE_LOCATION_OVERLAY/source_location" "$trace" || \
+    v0232_die "Clang did not select the pinned source_location-only overlay"
+  grep -Fq '/usr/include/c++/10/vector' "$trace" || \
+    v0232_die "Clang did not retain Bullseye GCC 10 standard-library headers"
+  if grep -Fq "$CXX_HEADERS_ROOT/usr/include/c++/11/" "$trace"; then
+    v0232_die "Clang selected a GCC 11 standard-library header outside the source_location overlay"
+  fi
+  {
+    printf 'source_location_overlay=%s/source_location\n' "$CXX_SOURCE_LOCATION_OVERLAY"
+    printf 'bullseye_standard_library_header=/usr/include/c++/10/vector\n'
+    grep -F "$CXX_SOURCE_LOCATION_OVERLAY/source_location" "$trace"
+    grep -F '/usr/include/c++/10/vector' "$trace"
+  } >"$report.tmp"
+  mv -f -- "$report.tmp" "$report"
+  cat "$report"
+}
 
 apply_i686_build_patches() {
   if patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$SOURCE" <"$I686_PATCH" >/dev/null 2>&1; then
@@ -241,7 +300,7 @@ probe_source_location() {
   rm -f -- "$probe_binary"
   {
     printf 'package=%s=%s\npackage_arch=%s\npackage_sha256=%s\n' "$CXX_HEADERS_PACKAGE" "$CXX_HEADERS_VERSION" "$CXX_HEADERS_ARCH" "$CXX_HEADERS_SHA256"
-    printf 'include_root=%s\nmultiarc_include_root=%s\ncompiler=%s\n' "$CXX_HEADERS_INCLUDE" "$CXX_HEADERS_MULTIARCH_INCLUDE" "$CXX_INFO"
+    printf 'source_location_overlay=%s\ncompiler=%s\n' "$CXX_SOURCE_LOCATION_OVERLAY" "$CXX_INFO"
     cat "$probe_report"
   } >"$probe_report.tmp"
   mv -f -- "$probe_report.tmp" "$probe_report"
@@ -263,6 +322,7 @@ check_cxx_runtime() {
     v0232_die "expected the Debian 11 libstdc++6 runtime from GCC 10, found $CXX_RUNTIME_PACKAGE_VERSION"
 }
 check_cxx_runtime
+verify_cxx_header_selection
 TOOLCHAIN_FINGERPRINT=$(v0232_fingerprint "$CC_INFO" "$CXX_INFO" "$MAKE_INFO" "$LD_INFO" "$PY_INFO" "$CXX_RUNTIME_LIBSTDCPP_PATH" "$CXX_RUNTIME_PACKAGE_VERSION" "$(uname -sr)" "$ROOT")
 configure_build() {
   cd "$BUILD"
