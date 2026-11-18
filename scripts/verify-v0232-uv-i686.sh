@@ -53,10 +53,13 @@ if [[ "$MODE" == runtime ]]; then
         }
     done
     [[ -r "/proc/$$/maps" ]] || { echo 'cannot inspect runtime shell mappings for emulation' >&2; exit 1; }
-    ! grep -qi qemu "/proc/$$/maps" || {
+    if grep -qi qemu "/proc/$$/maps"; then
         echo 'runtime refuses a shell with QEMU mapped into its process image' >&2
         exit 1
-    }
+    else
+        grep_status=$?
+        [[ $grep_status -eq 1 ]] || { echo 'failed to inspect runtime shell mappings for emulation' >&2; exit 1; }
+    fi
 fi
 [[ -d "$UPSTREAM/.git" || -f "$UPSTREAM/.git" ]] || { echo 'input is not a Git checkout' >&2; exit 1; }
 [[ "$(git -C "$UPSTREAM" rev-parse HEAD)" == "$PIN" ]] || { echo "input must be exact commit $PIN" >&2; exit 1; }
