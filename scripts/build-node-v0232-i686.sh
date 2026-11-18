@@ -9,6 +9,8 @@ source "$SCRIPT_DIR/v0232-i686-build-common.sh"
 source "$SCRIPT_DIR/v0232-node-toolchain.sh"
 
 readonly VERSION=26.12.1
+readonly I686_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-zlib-sse2.patch"
+readonly I686_PATCH_SHA256=$(v0232_sha256 "$I686_PATCH")
 readonly SOURCE_URL=https://nodejs.org/dist/v26.12.1/node-v26.12.1.tar.xz
 readonly SOURCE_SHA256=053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c
 readonly SOURCE_SHASUMS=https://nodejs.org/dist/v26.12.1/SHASUMS256.txt
@@ -16,7 +18,8 @@ readonly SOURCE_COMMIT=bc2e01dcf6acd5cf7d169b5f26cf89abaaeb41f1
 readonly SCRIPT_FINGERPRINT=$(v0232_fingerprint \
   "$(v0232_sha256 "$0")" \
   "$(v0232_sha256 "$SCRIPT_DIR/v0232-i686-build-common.sh")" \
-  "$(v0232_sha256 "$SCRIPT_DIR/v0232-node-toolchain.sh")")
+  "$(v0232_sha256 "$SCRIPT_DIR/v0232-node-toolchain.sh")" \
+  "$I686_PATCH_SHA256")
 
 MODE=build
 case "${1:-}" in
@@ -29,13 +32,14 @@ resumable checkpoints. Build CPython 3.14.9 first; its i686 interpreter is the
 Node build's Python prerequisite. Default build root: $HERMES_I686_BUILD_ROOT
 or .work/v0232-i686.
 
---preflight-only  Check native process ABI, compiler version/target and tools.
+--preflight-only  Check native process ABI, SSE2 support, compiler and tools.
 --prepare-only    Fetch/verify/extract pinned Node sources without building.
 
 Optional inputs: HERMES_I686_BUILD_ROOT, NODE_SOURCE_ARCHIVE, CPYTHON_PREFIX,
 CC, CXX, JOBS=1. GCC >=13.2 or Clang >=19.1 and GNU Make are required by the
 pinned upstream build guide. C and C++ compilers must use the same family,
-version, and Linux i686 target. The Node 26 x86 target is upstream Experimental.
+version, and Linux i686 target. The CPU must support SSE2. The Node 26 x86
+target is upstream Experimental.
 HELP
     exit 0
     ;;
@@ -67,7 +71,7 @@ fi
 
 v0232_need awk curl flock sha256sum tar
 if [[ "$MODE" == build ]]; then
-  v0232_need ld make readelf sort
+  v0232_need ld make patch readelf sort
   command -v "$CC_BIN" >/dev/null 2>&1 || v0232_die "missing C compiler: $CC_BIN"
   command -v "$CXX_BIN" >/dev/null 2>&1 || v0232_die "missing C++ compiler: $CXX_BIN"
   check_compiler
@@ -127,6 +131,17 @@ if [[ "$MODE" == prepare ]]; then
   exit 0
 fi
 
+apply_i686_zlib_patch() {
+  if patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$SOURCE" <"$I686_PATCH" >/dev/null 2>&1; then
+    v0232_log "Node i686 zlib patch is already applied"
+    return 0
+  fi
+  patch --silent --batch --forward --fuzz=0 -p1 -d "$SOURCE" <"$I686_PATCH"
+}
+
+PATCH_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$I686_PATCH_SHA256")
+v0232_checkpoint "$STATE" node-i686-patch "$PATCH_FINGERPRINT" "$SOURCE/deps/zlib/zlib.gyp" apply_i686_zlib_patch
+
 NODE_PYTHON="$CPYTHON_PREFIX/bin/python3.14"
 [[ -x "$NODE_PYTHON" ]] || v0232_die "build CPython 3.14.9 i686 first; missing $NODE_PYTHON"
 PY_INFO=$("$NODE_PYTHON" -I -c 'import struct,sys; print(".".join(map(str,sys.version_info[:3])) + " " + str(struct.calcsize("P") * 8))')
@@ -141,7 +156,7 @@ configure_build() {
   cd "$BUILD"
   env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u MAKEFLAGS -u CONFIG_SITE \
     LC_ALL=C TZ=UTC PATH="$(dirname "$NODE_PYTHON"):$PATH" PYTHON="$NODE_PYTHON" \
-    CC="$CC_BIN" CXX="$CXX_BIN" CFLAGS='-O2 -g0 -msse2' CXXFLAGS='-O2 -g0 -msse2' \
+    CC="$CC_BIN" CXX="$CXX_BIN" CFLAGS='-O2 -g0' CXXFLAGS='-O2 -g0' \
     "$SOURCE/configure" --prefix="$PREFIX" --dest-cpu=ia32 --with-intl=full-icu --openssl-no-asm
 }
 
@@ -187,7 +202,7 @@ if (!locale.toLowerCase().startsWith('es')) throw new Error(`Spanish locale data
 console.log(`intl_locale=${locale}`);
 NODE
   {
-    printf 'source_url=%s\nsource_sha256=%s\nsource_shasums=%s\nsource_tag_commit=%s\n' "$SOURCE_URL" "$SOURCE_SHA256" "$SOURCE_SHASUMS" "$SOURCE_COMMIT"
+    printf 'source_url=%s\nsource_sha256=%s\nsource_shasums=%s\nsource_tag_commit=%s\nnode_i686_patch_sha256=%s\n' "$SOURCE_URL" "$SOURCE_SHA256" "$SOURCE_SHASUMS" "$SOURCE_COMMIT" "$I686_PATCH_SHA256"
     printf 'compiler=%s\ncxx=%s\nmake=%s\nlinker=%s\npython=%s\n' "$CC_INFO" "$CXX_INFO" "$MAKE_INFO" "$LD_INFO" "$PY_INFO"
     printf 'toolchain_fingerprint=%s\nscript_sha256=%s\nnode_elf=' "$TOOLCHAIN_FINGERPRINT" "$SCRIPT_FINGERPRINT"
     v0232_elf_identity "$node"
@@ -195,7 +210,7 @@ NODE
   } >"$report"
 }
 
-CONFIG_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT" "$SCRIPT_FINGERPRINT" "$PREFIX" "$PY_INFO" "CC=$CC_BIN" "CXX=$CXX_BIN" 'CFLAGS=-O2 -g0 -msse2' 'CXXFLAGS=-O2 -g0 -msse2' '--dest-cpu=ia32' '--with-intl=full-icu' '--openssl-no-asm')
+CONFIG_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$PATCH_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT" "$SCRIPT_FINGERPRINT" "$PREFIX" "$PY_INFO" "CC=$CC_BIN" "CXX=$CXX_BIN" 'CFLAGS=-O2 -g0' 'CXXFLAGS=-O2 -g0' '--dest-cpu=ia32' '--with-intl=full-icu' '--openssl-no-asm')
 BUILD_FINGERPRINT=$(v0232_fingerprint "$CONFIG_FINGERPRINT" 'make -j1')
 INSTALL_FINGERPRINT=$(v0232_fingerprint "$BUILD_FINGERPRINT" "$PREFIX" 'make -j1 install')
 SMOKE_FINGERPRINT=$(v0232_fingerprint "$INSTALL_FINGERPRINT" 'ELF32; Node; npm; WebAssembly shared-memory; worker_threads; es-AR Intl')
