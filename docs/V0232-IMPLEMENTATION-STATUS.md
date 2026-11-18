@@ -38,6 +38,25 @@ The verified uv pin was the first binary `linux-i686` row added to the v0.23.2 l
 
 `bws`, `chromium`, `cua-driver`, `ffmpeg`, `iron-proxy`, `just`, `llamacpp-cpu`, `llamacpp-cuda`, `llamacpp-hip`, `llamacpp-vulkan`, `node`, `python`, `ripgrep`.
 
+### Metadata review of the remaining pins (2026-11-18)
+
+This was a metadata-only review of the exact lock pins and official release/registry listings. None of the 13 currently pinned packages publishes a Linux/i686 asset, so no target SHA-256 exists to add to the i686 lock. Any listed checksum file covers the separate x64 artifact only; Windows i686 and Linux ARMv7 artifacts are different targets. No binaries were downloaded and no new lock rows were added.
+
+| Pin | Official listing checked | i686 result |
+|---|---|---|
+| `bws` 2.0.0 | [Bitwarden release](https://github.com/bitwarden/sdk-sm/releases/tag/bws-v2.0.0), official checksum sidecar | No i686 asset or digest; sidecar covers x64/musl only. |
+| `chromium` `1248+156.0.8078.80` | [Chrome for Testing known-good metadata](https://raw.githubusercontent.com/GoogleChromeLabs/chrome-for-testing/main/data/known-good-versions-with-downloads.json) | Linux offers x64 and ARM64; no Linux/i686 artifact or hash. |
+| `cua-driver` 0.21.0 | [Cua driver release](https://github.com/trycua/cua/releases/tag/cua-driver-rs-v0.21.0), official `checksums.txt` | No i686 among 34 assets; checksum covers x64 only. |
+| `ffmpeg` 9.0.1 | [BtbN FFmpeg build](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-31-13-27), official `checksums.sha256` | No i686 among 49 assets; checksum covers x64 only. |
+| `iron-proxy` 0.39.0 | [Paradigm release](https://github.com/paradigmxyz/iron-proxy/releases/tag/v0.39.0), `checksums.txt` | Only Linux amd64 and arm64 assets. |
+| `just` 1.59.0 | [Just release](https://github.com/casey/just/releases/tag/1.59.0), `SHA256SUMS` | Has a 32-bit Linux ARM asset, but no Linux x86/i686 asset. |
+| `llamacpp-cpu`, `llamacpp-cuda`, `llamacpp-hip`, `llamacpp-vulkan` 12144 | [llama.cpp release](https://github.com/ggml-org/llama.cpp/releases/tag/b12144) | No i686 assets or published target checksums; lock also names `libgomp1` amd64. |
+| `node` 26.12.1 | [Official Node release checksums](https://nodejs.org/dist/v26.12.1/SHASUMS256.txt) | Linux x64, x64-musl, ARM64, ppc64le and s390x are listed; Linux x86/i686 is absent. Source build is tracked separately. |
+| `python` 3.14.9+20261021 | [python-build-standalone release](https://github.com/astral-sh/python-build-standalone/releases/tag/20261021), official `SHA256SUMS` | No i686 Linux build; i686 Windows and Linux ARMv7 entries are incompatible targets. |
+| `ripgrep` 15.2.0 | [ripgrep release](https://github.com/BurntSushi/ripgrep/releases/tag/15.2.0), published `.sha256` sidecars | Has i686 Windows and Linux ARMv7 assets, but no Linux/i686 asset. |
+
+These rows remain unsupported on i686 until a compatible artifact is published, built and verified for this target, or a package-specific port is reviewed. Existing x64 hashes must not be copied into the i686 rows.
+
 The other six lock packages have different target semantics: `dmgbuild` and `llamacpp-metal` are macOS tools; `git` is supplied by the Linux host; `npm` is pinned as a target-independent `any` artifact; `termux-docker` is Android ARM64 only; `whispercpp-cpu` has no Linux-x64 row. Their absence is not a claim of i686 compatibility.
 
 Runtime artifact checks performed for this milestone:
@@ -124,6 +143,7 @@ PR #8 adds an owner-gated GitHub-hosted runtime build using signed Debian metada
 ## Review follow-up and boundaries
 
 - The PR #2 request to verify uv before adding a pin is resolved by the ordered patch in PR #3: the release API digest, published checksum sidecar, downloaded bytes, and extracted ELF32 executables agree.
+- PR #9's CPython compiler guard requires a Linux i686 target; its regression fixture rejects `i686-w64-mingw32`.
 - The missing-pin regression now uses an explicit lock fixture. The patchset also covers ELF validation at the shared PM admission/install/doctor boundary so subclass-specific `verify()` implementations cannot bypass it.
 - Native i686 validation on the operator's staging host remains pending. This public workstream has no access to the B10 or private Púlsar code; the i686 uv binary was not executed here.
 - PR #2 remains open and unmerged. No deployment, production access, private customization, wheel upload, or channel session was used.
