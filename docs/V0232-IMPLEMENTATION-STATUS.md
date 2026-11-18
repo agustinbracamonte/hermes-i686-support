@@ -34,7 +34,7 @@ HERMES_PYTHON=/path/to/python-with-pytest tests/test-v0232-patchset.sh /path/to/
 
 ## Lock gaps and artifact evidence
 
-The verified uv pin was the first binary `linux-i686` row added to the v0.23.2 lock. The pnpm 12.15.0 WASM artifact is also pinned for `linux-i686`. GitHub CLI 2.97.0 now has a locally verified Linux 386 asset row; 13 remaining Linux-x64 candidates need individually reviewed i686 artifact rows and digests before PM can install them:
+The verified uv pin was the first binary `linux-i686` row added to the v0.23.2 lock. The pnpm 12.15.0 WASM artifact is also pinned for `linux-i686`. GitHub CLI 2.97.0 now has a locally verified Linux 386 asset row. The metadata review of the 13 remaining Linux-x64 candidate pins is complete; none publishes a Linux/i686 release asset, so no target digest is available for the lock. Resolve each required package through a source build with i686 provenance, a reviewed replacement, or an explicit unsupported-package policy before claiming PM closure:
 
 `bws`, `chromium`, `cua-driver`, `ffmpeg`, `iron-proxy`, `just`, `llamacpp-cpu`, `llamacpp-cuda`, `llamacpp-hip`, `llamacpp-vulkan`, `node`, `python`, `ripgrep`.
 
@@ -143,7 +143,7 @@ PR #8 adds an owner-gated GitHub-hosted runtime build using signed Debian metada
 2. Run the CPython 3.14.9 and Node 26.12.1 recipes on isolated ELF32/i686 staging with the documented compiler and system dependencies; capture interpreter/runtime ELF hashes and smoke results.
 3. Run the pnpm WASM CLI and offline install with that Node using `--require-ia32`; measure memory on the target before accepting it for Púlsar.
 4. Add and verify the locally built Node artifact in the private staging lock, then test the full PM dependency closure there. Do not publish the binary in this public repository.
-5. Review the 13 remaining PM rows against official assets and digests; keep unsupported packages explicit.
+5. Resolve the 13 metadata-reviewed PM gaps. Chromium and CUA-driver are optional and explicitly skipped on i686; FFmpeg remains required with no official i686 release asset. For each other required row, supply a reproducible source build or reviewed replacement with target ELF/hash evidence, or document why the feature is excluded. Do not copy x64 hashes into i686 rows.
 6. Run the offline wheel/lock reconciler in Púlsar staging against the actual plan, lock, and existing wheelhouse; resolve the nine gaps without downloading the reported 92 wheels again.
 7. Continue Púlsar's private migration only in the separate repository described by `PRIVATE-INTEGRATION-SETUP.md`; this public work contains no private source or customization details.
 
