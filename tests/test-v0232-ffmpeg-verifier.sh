@@ -34,6 +34,18 @@ if v0232_validate_ffmpeg_release_pair \
   echo 'FFmpeg verifier accepted mismatched FFmpeg/FFprobe versions' >&2
   exit 1
 fi
+if v0232_validate_ffmpeg_release_pair \
+  bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa \
+  'ffmpeg version n9.0.10' 'ffprobe version n9.0.10' >/dev/null; then
+  echo 'FFmpeg verifier accepted a prefix-matching but different release' >&2
+  exit 1
+fi
+if v0232_validate_ffmpeg_release_pair \
+  e47273f4d9227152dcbf543cebaf9e2430ddbcc4 \
+  'ffmpeg version n9.0.1-12-gfffffffffff' 'ffprobe version n9.0.1-12-gfffffffffff' >/dev/null; then
+  echo 'FFmpeg verifier accepted a different source-lineage build' >&2
+  exit 1
+fi
 "$ROOT/scripts/verify-v0232-ffmpeg-i686.sh" --help >/dev/null
 
 python3 - "$TMP" <<'PY'
