@@ -1,0 +1,12 @@
+--- a/deps/v8/src/inspector/string-util.h
++++ b/deps/v8/src/inspector/string-util.h
+@@ -53,7 +53,8 @@
+   String toBase64() const;
+   static Binary fromBase64(const String& base64, bool* success);
+   static Binary fromSpan(v8_crdtp::span<uint8_t> span) {
+-    return fromSpan(v8::MemorySpan<const uint8_t>(span.begin(), span.size()));
++    return Binary(
++        std::make_shared<std::vector<uint8_t>>(span.begin(), span.end()));
+   }
+   static Binary fromSpan(v8::MemorySpan<const uint8_t> span) {
+     return Binary(
