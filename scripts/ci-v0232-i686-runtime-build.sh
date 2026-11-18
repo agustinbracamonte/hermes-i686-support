@@ -77,10 +77,19 @@ apt-get -o Acquire::Check-Valid-Until=false --yes --no-install-recommends --down
   libncursesw5-dev libreadline-dev libsqlite3-dev libssl-dev uuid-dev \
   xz-utils zlib1g-dev
 
-clang_deb=/var/cache/apt/archives/clang-19_19.1.7-3~deb11u1_i386.deb
-test -f "$clang_deb"
+clang_deb=$(find /var/cache/apt/archives -maxdepth 1 -type f -name 'clang-19_*.deb' -print -quit)
+if test -z "$clang_deb"; then
+  printf 'Clang package was not saved in the APT cache; cached candidates:\n' >&2
+  find /var/cache/apt/archives -maxdepth 1 -type f -name '*clang*' -print >&2
+  exit 1
+fi
 actual_clang_sha=$(sha256sum "$clang_deb" | awk '{print $1}')
-test "$actual_clang_sha" = "$CLANG_SHA256"
+printf 'clang_package_file=%s\nclang_package_sha256=%s\nclang_index_sha256_expected=%s\n' \
+  "$clang_deb" "$actual_clang_sha" "$CLANG_SHA256"
+if test "$actual_clang_sha" != "$CLANG_SHA256"; then
+  apt-cache show clang-19 | awk '/^(Version|Filename|SHA256):/'
+  exit 1
+fi
 apt-get -o Acquire::Check-Valid-Until=false --yes --no-install-recommends --no-download install \
   build-essential ca-certificates clang-19="$CLANG_VERSION" curl git openssl pkg-config python3 tar \
   libbz2-dev libexpat1-dev libffi-dev libgdbm-compat-dev libgdbm-dev liblzma-dev \
