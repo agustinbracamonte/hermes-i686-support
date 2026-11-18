@@ -128,6 +128,19 @@ wheels = [
         self.assertEqual(result.returncode, 2)
         self.assertIn("must be Linux i686", result.stderr)
 
+    def test_rejects_universal_export_markers_instead_of_counting_them_as_i686(self):
+        self.write_lock(b"fixture wheel contents")
+        self.requirements.write_text(
+            "cffi==2.1.1; sys_platform == 'linux'\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("exact name==version pins only", result.stderr)
+        self.assertFalse(self.report.exists())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

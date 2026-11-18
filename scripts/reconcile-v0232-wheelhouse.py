@@ -70,6 +70,9 @@ def parse_requirements(path: Path) -> dict[str, str]:
         if not match:
             unsupported.append(f"line {line_number}")
             continue
+        if line[match.end():].strip():
+            unsupported.append(f"line {line_number}")
+            continue
         name, version = match.groups()
         key = canonical_name(name)
         if key in plan and plan[key] != version:

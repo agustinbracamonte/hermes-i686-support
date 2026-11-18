@@ -60,22 +60,20 @@ Hermes PM currently depends on its managed Node package for pnpm. Until Node 26.
 
 `scripts/reconcile-v0232-wheelhouse.py` compares an exact target-resolved requirements export, the matching `uv.lock`, and an existing wheelhouse. It uses the supplied CPython interpreter's `pip debug --verbose` tags by default and rejects an interpreter whose pointer width or `sysconfig` platform is not Linux i686. It reports each package as `verified`, `no-compatible-wheel`, `compatible-wheel-not-present`, `wheel-not-in-lock`, `package-not-in-lock`, or `hash-mismatch`.
 
-Run it in the isolated i686 staging environment, after exporting the plan with the same interpreter and lock:
+Run it in the isolated i686 staging environment against the exact package plan produced by that environment's target-specific resolver. The input must contain one resolved `name==version` pin per package. Do not pass a universal `uv export` output directly: it preserves PEP 508 markers and can include platform-specific direct references, so it is not an i686-only plan. The reconciler rejects those lines instead of counting them as i686 dependencies.
 
 ~~~bash
-uv export --locked --offline --no-emit-project --no-annotate \
-  --format requirements-txt > /tmp/hermes-v0232-plan-i686.txt
 /path/to/cpython-3.14.9-i686/bin/python3.14 scripts/reconcile-v0232-wheelhouse.py \
   --lock uv.lock \
-  --requirements /tmp/hermes-v0232-plan-i686.txt \
+  --requirements /path/to/staging-output/hermes-v0232-plan-i686-pins.txt \
   --wheelhouse /path/to/existing/verified-wheelhouse \
   --python /path/to/cpython-3.14.9-i686/bin/python3.14 \
   --output /tmp/hermes-v0232-wheel-reconciliation.json
 ~~~
 
-The tool is read-only with respect to the lock and wheelhouse: it does not download, build, rename, or install artifacts. Its JSON report contains package names, wheel filenames and hashes, lock/plan fingerprints, counts, and target tag fingerprint; it omits absolute input paths. A nonzero exit means a wheel is missing, incompatible, unpinned, or has the wrong digest. A lock-matched prebuilt wheel can be counted as verified. Wheels built locally from a locked sdist still need staging build provenance and an explicit lock-integration policy; this tool does not mislabel a locally built wheel as a registry artifact.
+Keep the exact plan-generation command and resolver version with the private staging evidence. The tool is read-only with respect to the lock and wheelhouse: it does not download, build, rename, or install artifacts. Its JSON report contains package names, wheel filenames and hashes, lock/plan fingerprints, counts, and target tag fingerprint; it omits absolute input paths. A nonzero exit means a wheel is missing, incompatible, unpinned, or has the wrong digest. A lock-matched prebuilt wheel can be counted as verified. Wheels built locally from a locked sdist still need staging build provenance and an explicit lock-integration policy; this tool does not mislabel a locally built wheel as a registry artifact.
 
-The 101-package plan, 92 reportedly verified wheels, nine reported gaps, and isolated `cffi`/`psutil` sync remain operator-supplied findings. This public work did not inspect or copy those files. The fixture tests exercise matching, missing-lock-row, missing-target-wheel and digest-mismatch results only; they are not evidence about Púlsar's wheelhouse.
+The 101-package plan, 92 reportedly verified wheels, nine reported gaps, and isolated `cffi`/`psutil` sync remain operator-supplied findings. This public work did not inspect or copy those files. Fixture tests cover matching, missing-lock-row, missing-target-wheel, digest-mismatch, incompatible-host and universal-marker rejection; they are not evidence about Púlsar's wheelhouse.
 
 ## Checks run in this work session
 

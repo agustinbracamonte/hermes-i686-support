@@ -80,7 +80,8 @@ Executed in this work session:
 - `scripts/build-cpython-v0232-i686.sh --prepare-only` — exit 0; exact CPython tag object/commit/tree verified; repeated invocation reused its source checkpoint.
 - `scripts/build-node-v0232-i686.sh --prepare-only` — exit 0; official Node source SHA verified and extraction checkpoint resumed. Both build scripts' `--preflight-only` reject this ELF64 x86_64 process before compiling.
 - `tests/test-v0232-runtime-builds.sh` — exit 0; syntax, serial-job rejection, bad archive hash, ELF32/x64 fixture, and checkpoint fingerprint coverage passed.
-- `python3 tests/test-v0232-wheel-reconcile.py` — exit 0; three synthetic-fixture cases cover lock hash/tag match, no lock row, no compatible wheel, digest mismatch, and rejection of this host as an i686 tag source.
+- `python3 tests/test-v0232-wheel-reconcile.py` — exit 0; four synthetic-fixture cases cover lock hash/tag match, no lock row, no compatible wheel, digest mismatch, rejection of this host as an i686 tag source, and rejection of universal export markers.
+- Against the pinned public Hermes lock, `uv export --locked --offline --no-emit-project --no-annotate --format requirements.txt` emitted platform-marked entries and an Android VCS reference. That universal export is not an i686 dependency plan; the reconciler now rejects marker-bearing entries, and the staging plan must come from the target-specific resolver.
 - Both `--prepare-only` paths passed using nonexistent compiler paths and reused checkpoints.
 
 | Check | Evidence label | Status |
