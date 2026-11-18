@@ -148,7 +148,7 @@ These checks establish source, hash, PM staging, and host-side WASM behavior. Ho
 
 ## Next staging checks
 
-1. Push the updated workflow trigger on PR #11 to run the i386 validation against the Node `split_view` compatibility patch. Continue to Node/npm ELF32, runtime library requirements, and pnpm WASM offline installation only after Node builds successfully. Do not treat the hosted runner as B10 staging evidence.
+1. Retrieve PR #11 Actions run #18 (`44313086250`) after it reaches a terminal state, then record exact hashes and smoke results. Do not duplicate the active run. If it fails, inspect the compiler error before changing the patch; if Node builds, continue to npm ELF32, runtime-library requirements, and pnpm WASM offline installation. Do not treat hosted output as B10 staging evidence.
 2. Build CPython, then Node, serially; retain each result manifest and the source/system package records.
 3. Run verify-v0232-pnpm-wasm.sh --require-ia32 against the built Node. Capture memory use and check the offline install result.
 4. Have Púlsar validate those outputs in its staging environment and reconcile the Node pin into its real lock. No staging host was accessed by this public task.
