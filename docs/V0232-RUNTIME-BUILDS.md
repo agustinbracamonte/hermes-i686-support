@@ -64,6 +64,10 @@ The first hosted run verified the signed Bullseye snapshot and created an i386 r
 
 PR #11 Actions run `44416379788` (job `135197659041`) is active on head `ff630234a92748cfee1a8be292ec9c53e1af3a48`. The latest job-step snapshot shows setup completed and the combined step named `Fetch the exact public PR source` still active. That step invokes the full build script, so its summary does not reveal whether the runner is downloading source, preparing Debian, or compiling. No build logs or artifacts are available yet. Do not rerun or start another serial runtime build until this run is terminal. This head includes the corrected six-label ELF32 memory-span assertion; it does not include PR #16's follow-up empty-span guard.
 
+### PR #16 real-header sanitizer probe (host-only, 2026-11-18)
+
+A focused empty/non-empty copy probe compiled against the actual `deps/v8/include/v8-memory-span.h` from the already verified Node v26.12.1 source archive and ran with GCC 14.2, AddressSanitizer, and UndefinedBehaviorSanitizer (exit 0). Source archive SHA-256: `053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c`; header SHA-256: `341439dc5f96d40f8064df3c745733145eef198e9400c1d3fd9d8a05c3332618`. This verifies the actual `MemorySpan` API and guard pattern on x86_64; it is not patched Node or native i686 evidence.
+
 ### Run #26 completed checkpoint
 
 PR #11 Actions run `44413510043` (job `135187603099`) reached terminal failure on head `4dc62ee7d9c7ee2d49b94449f458716e55ab2d4e`. The Clang 19.1.7 i386 package SHA-256 `d52c7089346ebc4616d3e9e3bbee6eb0848455a9abb777746fdd32812ce981d3` matched signed Bullseye metadata and Clang's i686 preflight passed. CPython 3.14.9 passed its ELF32 smoke checks in Debian 11 i386 userspace; executable SHA-256 `02955aebb30f994f16d7d179cd22681ccf5771181a0f32375012df052c2202af`. Source-location, ranges, bit-cast, ostringstream, and all six V8 memory-span checks compiled and ran as ELF32/EM_386.

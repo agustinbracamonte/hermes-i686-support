@@ -4,6 +4,8 @@ Updated 2026-11-18. PR #11 is open and unmerged on top of PR #9 at head `ff63023
 
 Parallel review PRs remain open and unmerged. PR #15 (`3e953fa78ac702130fb18f98f2af9293b1a2277e`) stages the pnpm WASM launcher using an explicitly selected Node store and private temp root; its local safety and script tests pass, but no managed Node/i686 execution was run. PR #16 (`de1ef08753b2d07c8e91d071a3d61feb85f14f14`) adds portable empty-span guards for V8 copy paths; local exact-source and fixture tests pass, but it is not included in run #27. PR #17 (`e4607d4dc86de5e052e9d15c6c636e25c48e0216`) verifies the exact FFmpeg source-version banner. PR #18 (`05ec032f2cdddb1b6dc649cff68e58f090cf0c96`) adds fail-closed native uv execution guards and a static rerun using the already verified uv archive. Neither PR #17 nor #18 provides native-i686 execution evidence.
 
+Supplemental PR #16 check (host x86_64, not i686): a small empty/non-empty copy probe compiled against the actual Node v26.12.1 `deps/v8/include/v8-memory-span.h` and ran under GCC 14.2 with AddressSanitizer and UndefinedBehaviorSanitizer; it exited 0. The official Node source archive SHA-256 is `053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c`, and the V8 header SHA-256 is `341439dc5f96d40f8064df3c745733145eef198e9400c1d3fd9d8a05c3332618`. This exercises the real header API with the guard pattern; it does not build or run patched Node.
+
 Standard `ubuntu-24.04` runners for this public repository are free and unlimited under GitHub's published Actions pricing; no larger runner, configured secret, or binary artifact upload is used.
 
 ## Pinned source
