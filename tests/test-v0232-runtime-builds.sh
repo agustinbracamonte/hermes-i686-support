@@ -14,10 +14,29 @@ bash -n "$ROOT/scripts/build-cpython-v0232-i686.sh" \
 "$ROOT/scripts/build-cpython-v0232-i686.sh" --help >/dev/null
 "$ROOT/scripts/build-node-v0232-i686.sh" --help >/dev/null
 grep -Fq -- '--openssl-no-asm' "$ROOT/scripts/build-node-v0232-i686.sh"
-grep -Fq -- '-msse2' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq -- '-msse2' "$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
 grep -Fq 'v0232_require_cpu_feature sse2' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-i686-patch' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'CHROOT_STATUS=$?' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+
+patch_fixture="$TMP/node-source"
+mkdir -p "$patch_fixture/deps/zlib"
+cat >"$patch_fixture/deps/zlib/zlib.gyp" <<'GYP'
+              'defines': [ 'DEFLATE_SLIDE_HASH_SSE2' ],
+              'conditions': [
+                ['target_arch=="x64"', {
+                  'defines': [ 'INFLATE_CHUNK_READ_64LE' ],
+                }],
+GYP
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
+grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
+grep -Fq "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-zlib-sse2.patch"
 
 set +e
 output=$(GITHUB_ACTIONS=false RUNNER_ENVIRONMENT=self-hosted RUNNER_ARCH=X64 \

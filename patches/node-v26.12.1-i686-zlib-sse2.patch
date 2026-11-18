@@ -1,0 +1,10 @@
+--- a/deps/zlib/zlib.gyp
++++ b/deps/zlib/zlib.gyp
+@@ -220,4 +220,7 @@
+               'conditions': [
++                ['target_arch=="ia32"', {
++                  'cflags': [ '-msse2' ],
++                }],
+                 ['target_arch=="x64"', {
+                   'defines': [ 'INFLATE_CHUNK_READ_64LE' ],
+                 }],
