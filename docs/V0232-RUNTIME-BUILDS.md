@@ -87,6 +87,17 @@ The script verifies SHA-256 and npm SHA-512 integrity, proves the regular wrappe
 
 Hermes PM currently depends on its managed Node package for pnpm. Until Node 26.12.1 is built, ELF32-verified, and pinned in the private staging lock, this work can cross-stage the pnpm WASM artifact itself but cannot claim a complete pnpm dependency closure or full PM install on i686.
 
+The PM cross-stage harness can also exercise the actual generated `bin/pnpm` wrapper with a PM-managed Node. This is optional unless a Node executable is supplied, and it refuses a Node path outside the explicitly selected runtime store. Pass both paths explicitly to avoid inheriting a runtime store accidentally. Use only an isolated staging store because the test stages pnpm into it; provide the already-verified WASM archive instead of redownloading it:
+
+~~~bash
+export PNPM_WASM_ARCHIVE=/srv/hermes-staging/artifacts/pnpm-wasm-12.15.0.tgz
+export PNPM_NODE_BIN=/absolute/path/to/node-inside-staging-store
+scripts/test-v0232-pnpm-wasm-pm-stage.sh /srv/hermes-staging/hermes-agent \
+  --runtime-dir /srv/hermes-staging/tools --require-ia32
+~~~
+
+That mode checks the exact Node version and `process.arch`; `--require-ia32` also requires ELF32/EM_386. It puts a verified Node symlink first in a clean PATH, runs `bin/pnpm --version` and an offline local-file install through the staged wrapper, then confirms the installed fixture can load. `tests/test-v0232-pnpm-wrapper-path.sh` uses a mock Node to verify PATH precedence and argument forwarding without claiming a target runtime. Native i686 proof still requires a real ELF32 Node in isolated i686 staging.
+
 ## Offline wheel/lock reconciliation
 
 `scripts/reconcile-v0232-wheelhouse.py` compares an exact target-resolved requirements export, the matching `uv.lock`, and an existing wheelhouse. It uses the supplied CPython interpreter's `pip debug --verbose` tags by default and rejects an interpreter whose pointer width or `sysconfig` platform is not Linux i686. It reports each package as `verified`, `no-compatible-wheel`, `compatible-wheel-not-present`, `wheel-not-in-lock`, `package-not-in-lock`, or `hash-mismatch`.

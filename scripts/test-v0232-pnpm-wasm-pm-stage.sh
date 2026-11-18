@@ -3,9 +3,70 @@
 # Uses loopback, so PM hashes and installs the supplied archive without a second download.
 set -euo pipefail
 
-UPSTREAM=${1:?usage: test-v0232-pnpm-wasm-pm-stage.sh PATCHED_HERMES_V0232_CHECKOUT}
-ARCHIVE=${PNPM_WASM_ARCHIVE:?set PNPM_WASM_ARCHIVE to the verified @pnpm/wasm 12.15.0 archive}
+usage() {
+  cat <<'HELP'
+Usage: test-v0232-pnpm-wasm-pm-stage.sh PATCHED_HERMES_V0232_CHECKOUT [--node-bin PATH --runtime-dir PATH] [--require-ia32]
+
+Cross-stages the already-verified pnpm WASM archive through PM. With --node-bin,
+also executes the staged pnpm launchers and an offline local-file install via
+the Node executable resolved from an explicit, isolated --runtime-dir store
+containing that Node. This test stages pnpm into that same store. Node must be
+v26.12.1.
+--require-ia32 additionally requires process.arch=ia32 for native staging tests.
+Set PNPM_WASM_ARCHIVE to the verified archive; this script does not download it.
+HELP
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+if (($# == 0)); then
+  usage >&2
+  exit 2
+fi
+UPSTREAM=$1
+shift
 PYTHON=${HERMES_PYTHON:-python3}
+PNPM_NODE_BIN=${PNPM_NODE_BIN:-}
+PNPM_REQUIRE_IA32=0
+PNPM_RUNTIME_STORE=
+while (($#)); do
+  case "$1" in
+    --node-bin)
+      [[ $# -ge 2 && -n "$2" ]] || { echo '--node-bin requires a path' >&2; exit 2; }
+      PNPM_NODE_BIN=$2
+      shift 2
+      ;;
+    --runtime-dir)
+      [[ $# -ge 2 && -n "$2" ]] || { echo '--runtime-dir requires a path' >&2; exit 2; }
+      PNPM_RUNTIME_STORE=$2
+      shift 2
+      ;;
+    --require-ia32)
+      PNPM_REQUIRE_IA32=1
+      shift
+      ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+if (( PNPM_REQUIRE_IA32 )) && [[ -z "$PNPM_NODE_BIN" ]]; then
+  echo '--require-ia32 requires --node-bin or PNPM_NODE_BIN' >&2
+  exit 2
+fi
+if [[ -n "$PNPM_NODE_BIN" && -z "$PNPM_RUNTIME_STORE" ]]; then
+  echo 'PM-managed Node execution requires an explicit isolated --runtime-dir store' >&2
+  exit 2
+fi
+if [[ -n "$PNPM_RUNTIME_STORE" && -z "$PNPM_NODE_BIN" ]]; then
+  echo '--runtime-dir requires --node-bin or PNPM_NODE_BIN' >&2
+  exit 2
+fi
+if [[ -n "$PNPM_RUNTIME_STORE" && "$PNPM_RUNTIME_STORE" != /* ]]; then
+  echo '--runtime-dir must be an absolute path' >&2
+  exit 2
+fi
+ARCHIVE=${PNPM_WASM_ARCHIVE:?set PNPM_WASM_ARCHIVE to the verified @pnpm/wasm 12.15.0 archive}
 PIN="ae2a81ccc00e9b7c06301523e5bb09608397149c"
 [[ -d "$UPSTREAM/.git" || -f "$UPSTREAM/.git" ]] || { echo 'input is not a Git checkout' >&2; exit 1; }
 [[ "$(git -C "$UPSTREAM" rev-parse HEAD)" == "$PIN" ]] || { echo "input must be exact commit $PIN" >&2; exit 1; }
@@ -13,7 +74,10 @@ PIN="ae2a81ccc00e9b7c06301523e5bb09608397149c"
 
 TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
-HERMES_HOME="$TMP/home" HERMES_RUNTIME_DIR="$TMP/tools" \
+RUNTIME_DIR=${PNPM_RUNTIME_STORE:-"$TMP/tools"}
+mkdir -p "$RUNTIME_DIR"
+HERMES_HOME="$TMP/home" HERMES_RUNTIME_DIR="$RUNTIME_DIR" \
+  PNPM_NODE_BIN="$PNPM_NODE_BIN" PNPM_REQUIRE_IA32="$PNPM_REQUIRE_IA32" \
   "$PYTHON" - "$UPSTREAM" "$ARCHIVE" <<'PY'
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
@@ -22,6 +86,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import subprocess
 from threading import Thread
 
 source = Path(sys.argv[1]).resolve()
@@ -32,7 +97,7 @@ os.chdir(source)
 from pm import paths
 from pm.install import stage_only
 from pm.lock import Lockfile
-from pm.package import verify_package_entry
+from pm.package import machine_matches_binary, verify_package_entry
 from pm.registry import get_package
 
 data = archive.read_bytes()
@@ -107,7 +172,111 @@ try:
         raise SystemExit("PM staged the wrong pnpm WASM package")
     if wasm.stat().st_size != 44_951_421 or wasm.read_bytes()[:4] != b"\x00asm":
         raise SystemExit("PM staged an invalid pnpm WASM module")
-    print(f"pnpm WASM PM cross-stage: PASS ({checksum}; {entry.name}; ELF scan passed; no pnpm/Node execution)")
+    print(f"pnpm WASM PM cross-stage: PASS ({checksum}; {entry.name}; ELF scan passed)")
+
+    node_value = os.environ.get("PNPM_NODE_BIN", "")
+    require_ia32 = os.environ.get("PNPM_REQUIRE_IA32") == "1"
+    if not node_value:
+        if require_ia32:
+            raise SystemExit("--require-ia32 needs a Node binary")
+        print("pnpm WASM staged launcher execution: NOT RUN (no PM-managed Node supplied)")
+        raise SystemExit(0)
+
+    node = Path(node_value)
+    if not node.is_absolute():
+        raise SystemExit("PM-managed Node path must be absolute")
+    try:
+        node = node.resolve(strict=True)
+    except OSError as exc:
+        raise SystemExit(f"could not resolve PM-managed Node: {exc}")
+    store = Path(os.environ["HERMES_RUNTIME_DIR"]).resolve()
+    try:
+        node.relative_to(store)
+    except ValueError:
+        raise SystemExit("Node executable must resolve inside HERMES_RUNTIME_DIR")
+    if not node.is_file() or not os.access(node, os.X_OK):
+        raise SystemExit("PM-managed Node is not an executable file")
+    if require_ia32 and machine_matches_binary(node, "linux-i686") is not True:
+        raise SystemExit("--require-ia32 but PM-managed Node is not ELF32/EM_386")
+
+    runtime_test = Path(os.environ["HERMES_HOME"]).parent / "pnpm-runtime-test"
+    test_home = runtime_test / "home"
+    node_path = runtime_test / "path"
+    node_path.mkdir(parents=True)
+    test_home.mkdir(parents=True)
+    (node_path / "node").symlink_to(node)
+    env = {
+        "HOME": str(test_home),
+        "PATH": f"{node_path}:/usr/bin:/bin",
+        "COREPACK_ENABLE_NETWORK": "0",
+        "CI": "1",
+        "NPM_CONFIG_USERCONFIG": "/dev/null",
+        "NPM_CONFIG_GLOBALCONFIG": "/dev/null",
+        "NO_COLOR": "1",
+        "FORCE_COLOR": "0",
+    }
+    selected_node = subprocess.run(
+        ["/bin/sh", "-c", "command -v node"], check=True, capture_output=True, text=True, env=env
+    ).stdout.strip()
+    if Path(selected_node).resolve() != node:
+        raise SystemExit(f"controlled PATH selected {selected_node}, expected PM-managed Node {node}")
+
+    try:
+        node_version = subprocess.run(
+            [str(node), "--version"], check=True, capture_output=True, text=True, env=env
+        ).stdout.strip()
+        node_arch = subprocess.run(
+            [str(node), "-p", "process.arch"], check=True, capture_output=True, text=True, env=env
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(f"could not run PM-managed Node preflight: {exc}")
+    if node_version != "v26.12.1":
+        raise SystemExit(f"PM-managed Node must be v26.12.1; found {node_version}")
+    if require_ia32 and node_arch != "ia32":
+        raise SystemExit(f"--require-ia32 but PM-managed Node reports process.arch={node_arch}")
+
+    wrapper = package.binary(entry, "linux-i686").parent / "pnpm"
+    version_result = subprocess.run(
+        [str(wrapper), "--version"], check=True, capture_output=True, text=True, env=env
+    ).stdout.strip()
+    if version_result != "12.15.0":
+        raise SystemExit(f"staged pnpm launcher returned {version_result}, expected 12.15.0")
+
+    dependency = runtime_test / "dependency"
+    app = runtime_test / "app"
+    dependency.mkdir()
+    app.mkdir()
+    (dependency / "package.json").write_text(
+        json.dumps({"name": "hermes-i686-offline-fixture", "version": "1.0.0", "main": "index.js"}),
+        encoding="utf-8",
+    )
+    (dependency / "index.js").write_text("module.exports = 'offline-ok'\n", encoding="utf-8")
+    (app / "package.json").write_text(
+        json.dumps({
+            "name": "hermes-i686-pnpm-launcher-smoke",
+            "version": "1.0.0",
+            "private": True,
+            "dependencies": {"hermes-i686-offline-fixture": "file:../dependency"},
+        }),
+        encoding="utf-8",
+    )
+    subprocess.run(
+        [str(wrapper), "install", "--offline", "--ignore-scripts"],
+        cwd=app,
+        check=True,
+        env=env,
+    )
+    loaded = subprocess.run(
+        [str(node), "-e", "process.stdout.write(require('hermes-i686-offline-fixture'))"],
+        cwd=app,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout
+    if loaded != "offline-ok":
+        raise SystemExit("staged pnpm launcher did not install the local offline dependency")
+    print(f"pnpm WASM staged launcher execution: PASS (pnpm={version_result}; node={node_version}; arch={node_arch}; controlled PATH selected PM store Node; offline file install passed)")
 finally:
     server.shutdown()
     server.server_close()
