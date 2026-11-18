@@ -71,6 +71,11 @@ grep -Fq 'CXX_HEADER_FLAGS=(-nostdinc++' "$ROOT/scripts/build-node-v0232-i686.sh
 grep -Fq 'CXX_RUNTIME_PACKAGE_VERSION' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'GLIBCXX_3.4.28' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'source-location-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
+  grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
+sed -n '/^install_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
+  grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
+grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'sizeof(std::source_location) == sizeof(void*)' "$ROOT/tests/fixtures/node-source-location.cpp"
 grep -Fq 'std::source_location::current()' "$ROOT/tests/fixtures/node-source-location.cpp"
 
