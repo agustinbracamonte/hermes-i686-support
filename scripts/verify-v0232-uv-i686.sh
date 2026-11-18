@@ -12,8 +12,9 @@ Usage: verify-v0232-uv-i686.sh [--static-only|--runtime] PATCHED_HERMES_V0232_CH
 
 Static mode verifies the official checksum sidecar, archive SHA-256, lock pin,
 bootstrap pins and ELF32/EM_386 headers without executing uv. Runtime mode first
-requires this script's shell to be a 32-bit ELF32/EM_386 process, then runs the
-verified uv/uvx binaries in an isolated temporary cache and checks version 0.13.5.
+requires this script's shell to be a 32-bit ELF32/EM_386 process, rejects
+QEMU-marked or QEMU-mapped shells, then runs the verified uv/uvx binaries in an
+isolated temporary cache and checks version 0.13.5.
 
 Set UV_I686_ARCHIVE to reuse an already downloaded archive; the official checksum
 sidecar is still fetched and compared. Runtime mode is intended for native i686
@@ -32,8 +33,8 @@ fi
 UPSTREAM=${1:?usage: verify-v0232-uv-i686.sh [--static-only|--runtime] PATCHED_HERMES_V0232_CHECKOUT}
 PIN="ae2a81ccc00e9b7c06301523e5bb09608397149c"
 if [[ "$MODE" == runtime ]]; then
-    if ! command -v readelf >/dev/null 2>&1 || ! command -v getconf >/dev/null 2>&1; then
-        echo 'runtime mode requires readelf and getconf' >&2
+    if ! command -v readelf >/dev/null 2>&1 || ! command -v getconf >/dev/null 2>&1 || ! command -v grep >/dev/null 2>&1; then
+        echo 'runtime mode requires readelf, getconf and grep' >&2
         exit 1
     fi
     executable="/proc/$$/exe"
@@ -43,6 +44,17 @@ if [[ "$MODE" == runtime ]]; then
     bits=$(getconf LONG_BIT)
     [[ "$class" == ELF32 && "$machine" == 'Intel 80386' && "$bits" == 32 ]] || {
         echo "runtime must run in an i686 userspace process (saw $class $machine, LONG_BIT=$bits; uname is ignored)" >&2
+        exit 1
+    }
+    for qemu_env in QEMU_LD_PREFIX QEMU_CPU QEMU_SET_ENV QEMU_UNSET_ENV; do
+        [[ -z "${!qemu_env:-}" ]] || {
+            echo "runtime refuses a QEMU-marked process ($qemu_env is set)" >&2
+            exit 1
+        }
+    done
+    [[ -r "/proc/$$/maps" ]] || { echo 'cannot inspect runtime shell mappings for emulation' >&2; exit 1; }
+    ! grep -qi qemu "/proc/$$/maps" || {
+        echo 'runtime refuses a shell with QEMU mapped into its process image' >&2
         exit 1
     }
 fi
