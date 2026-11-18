@@ -62,7 +62,7 @@ The first hosted run verified the signed Bullseye snapshot and created an i386 r
 
 ### Run #27 active checkpoint
 
-PR #11 Actions run `44416379788` (job `135197659041`) is active on head `ff630234a92748cfee1a8be292ec9c53e1af3a48`. The latest job-step snapshot shows setup completed and the exact public PR source fetch still in progress. No build logs or artifacts are available yet. Do not rerun or start another serial runtime build until this run is terminal. This head includes the corrected six-label ELF32 memory-span assertion; it does not include PR #16's follow-up empty-span guard.
+PR #11 Actions run `44416379788` (job `135197659041`) is active on head `ff630234a92748cfee1a8be292ec9c53e1af3a48`. The latest job-step snapshot shows setup completed and the combined step named `Fetch the exact public PR source` still active. That step invokes the full build script, so its summary does not reveal whether the runner is downloading source, preparing Debian, or compiling. No build logs or artifacts are available yet. Do not rerun or start another serial runtime build until this run is terminal. This head includes the corrected six-label ELF32 memory-span assertion; it does not include PR #16's follow-up empty-span guard.
 
 ### Run #26 completed checkpoint
 
