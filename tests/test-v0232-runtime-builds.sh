@@ -337,6 +337,15 @@ grep -Fq 'ostringstream-rvalue-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node-v26.12.1-i686-v8-memory-span-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_v8_memory_span_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'v8-memory-span-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+for memory_span_case in \
+  memory_span_crdtp_nonempty_copy \
+  memory_span_crdtp_empty_copy \
+  memory_span_cached_nonempty_copy \
+  memory_span_cached_empty_copy \
+  memory_span_wasm_nonempty_copy \
+  memory_span_wasm_empty_copy; do
+  grep -Fq "$memory_span_case=PASS" "$ROOT/scripts/build-node-v0232-i686.sh"
+done
 grep -Fq 'node_patch_set_fingerprint' "$ROOT/scripts/build-node-v0232-i686.sh"
 sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'

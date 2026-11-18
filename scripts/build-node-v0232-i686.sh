@@ -408,10 +408,9 @@ probe_memory_span_compat() {
     "$MEMORY_SPAN_FIXTURE" -o "$probe_binary"
   v0232_assert_i686_elf "$probe_binary"
   "$probe_binary" >"$probe_report"
-  grep -Fxq 'memory_span_nonempty_copy=PASS' "$probe_report" || \
-    v0232_die "Node's V8 memory-span nonempty copy probe returned unexpected output"
-  grep -Fxq 'memory_span_empty_copy=PASS' "$probe_report" || \
-    v0232_die "Node's V8 memory-span empty copy probe returned unexpected output"
+  local expected_output=$'memory_span_crdtp_nonempty_copy=PASS\nmemory_span_crdtp_empty_copy=PASS\nmemory_span_cached_nonempty_copy=PASS\nmemory_span_cached_empty_copy=PASS\nmemory_span_wasm_nonempty_copy=PASS\nmemory_span_wasm_empty_copy=PASS'
+  [[ $(cat "$probe_report") == "$expected_output" ]] || \
+    v0232_die "Node's V8 memory-span copy probe returned unexpected output"
   rm -f -- "$probe_binary"
   {
     printf 'compiler=%s\nnode_v8_memory_span_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \

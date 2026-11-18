@@ -60,7 +60,13 @@ The first hosted run verified the signed Bullseye snapshot and created an i386 r
 
 ## Latest hosted run checkpoint (2026-11-18)
 
-### Run #25 completed checkpoint
+### Run #26 completed checkpoint
+
+PR #11 Actions run `44413510043` (job `135187603099`) reached terminal failure on head `4dc62ee7d9c7ee2d49b94449f458716e55ab2d4e`. The Clang 19.1.7 i386 package SHA-256 `d52c7089346ebc4616d3e9e3bbee6eb0848455a9abb777746fdd32812ce981d3` matched signed Bullseye metadata and Clang's i686 preflight passed. CPython 3.14.9 passed its ELF32 smoke checks in Debian 11 i386 userspace; executable SHA-256 `02955aebb30f994f16d7d179cd22681ccf5771181a0f32375012df052c2202af`. Source-location, ranges, bit-cast, ostringstream, and all six V8 memory-span checks compiled and ran as ELF32/EM_386.
+
+The workflow then stopped in the memory-span probe wrapper: the fixture now emits six per-path labels (`crdtp`, cached script, and WebAssembly; empty and non-empty), while the wrapper still expected two old generic labels. The ELF32 probe itself passed all six cases; Node configuration and compilation did not begin. The helper now compares the exact six-line output, and `tests/test-v0232-runtime-builds.sh`, `tests/test-scripts.sh`, shell syntax, and `git diff --check` pass locally. This is host-side regression evidence for the wrapper fix, not a Node build. The follow-up hosted run must confirm it advances to Node configuration and compilation.
+
+### Prior run #25 checkpoint
 
 PR #11 Actions run `44386892522` (job `135093782720`) reached terminal failure on head `ba822302502179c3e9c06d5fc50b08d99b2399e1`. The Clang 19.1.7 i386 package SHA-256 `d52c7089346ebc4616d3e9e3bbee6eb0848455a9abb777746fdd32812ce981d3` matched the signed Bullseye security index and its i686 preflight passed. CPython 3.14.9 built and passed its ELF32 smoke checks in Debian 11 i386 userspace; executable SHA-256 `a5b5850ee0051cb42fcb56d281e56276c20a065d64ac4c932d1d43a2a76f19c6`. The source-location, ranges, bit-cast, ostringstream, and memory-span probes all compiled and ran as ELF32/EM_386. Node then failed compiling `deps/v8/src/inspector/v8-debugger-agent-impl.cc:1249`; overload resolution considered converting V8's `MemorySpan` to the other `Binary::fromSpan(std::span)` overload, and Bullseye libstdc++ 10's range constraints failed on `MemorySpan::Iterator`. No Node ELF, npm, or pnpm output was produced.
 
