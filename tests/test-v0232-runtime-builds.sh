@@ -25,7 +25,9 @@ patch_fixture="$TMP/node-source"
 mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl" \
   "$patch_fixture/deps/v8/src/base" "$patch_fixture/deps/v8/src/strings" \
   "$patch_fixture/deps/v8/src/api" "$patch_fixture/deps/v8/src/inspector" \
-  "$patch_fixture/src/tracing" "$patch_fixture/src"
+  "$patch_fixture/deps/simdjson" "$patch_fixture/src/tracing" "$patch_fixture/src"
+cp "$ROOT/tests/fixtures/node-simdjson-odr/simdjson.h" \
+  "$patch_fixture/deps/simdjson/simdjson.h"
 cat >"$patch_fixture/src/node_options.cc" <<'CPP'
   inspect_publish_uid.console = false;
   inspect_publish_uid.http = false;
@@ -206,6 +208,35 @@ patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+python3 "$ROOT/scripts/patch-node-simdjson-inline-odr.py" \
+  "$patch_fixture/deps/simdjson/simdjson.h"
+python3 "$ROOT/scripts/patch-node-simdjson-inline-odr.py" \
+  "$patch_fixture/deps/simdjson/simdjson.h"
+[[ $(grep -Fc 'inline SIMDJSON_CONSTEXPR_STRING void append_uint' \
+  "$patch_fixture/deps/simdjson/simdjson.h") -eq 9 ]]
+[[ $(grep -Fc 'inline SIMDJSON_CONSTEXPR_STRING void append_byte' \
+  "$patch_fixture/deps/simdjson/simdjson.h") -eq 9 ]]
+partial_simdjson_fixture="$TMP/node-simdjson-odr-partial.h"
+cp "$ROOT/tests/fixtures/node-simdjson-odr/simdjson.h" "$partial_simdjson_fixture"
+python3 - "$partial_simdjson_fixture" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "SIMDJSON_CONSTEXPR_STRING void append_uint("
+if text.count(needle) != 9:
+    raise SystemExit("unexpected simdjson ODR fixture count")
+path.write_text(text.replace(needle, "inline " + needle, 1))
+PY
+partial_before=$(sha256sum "$partial_simdjson_fixture" | awk '{print $1}')
+if python3 "$ROOT/scripts/patch-node-simdjson-inline-odr.py" \
+  "$partial_simdjson_fixture" >"$TMP/node-simdjson-partial.log" 2>&1; then
+  echo 'simdjson ODR patcher accepted a partially patched source' >&2
+  exit 1
+fi
+partial_after=$(sha256sum "$partial_simdjson_fixture" | awk '{print $1}')
+[[ "$partial_before" == "$partial_after" ]]
 grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
 [[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
 grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
@@ -280,6 +311,13 @@ expected_memory_span_output=$'memory_span_crdtp_nonempty_copy=PASS\nmemory_span_
   "$ROOT/tests/fixtures/node-v8-memory-span-compat.cpp" \
   -o "$TMP/node-v8-memory-span-i686-fallback"
 [[ $("$TMP/node-v8-memory-span-i686-fallback") == "$expected_memory_span_output" ]]
+"${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra -Werror \
+  -I"$patch_fixture/deps/simdjson" \
+  "$ROOT/tests/fixtures/node-simdjson-odr-main.cpp" \
+  "$ROOT/tests/fixtures/node-simdjson-odr-a.cpp" \
+  "$ROOT/tests/fixtures/node-simdjson-odr-b.cpp" \
+  -o "$TMP/node-simdjson-odr"
+[[ $("$TMP/node-simdjson-odr") == 'simdjson_header_odr=PASS' ]]
 mkdir -p "$TMP/legacy-cxx-headers"
 : >"$TMP/legacy-cxx-headers/bit"
 cat >"$TMP/legacy-cxx-headers/type_traits" <<'CPP'
@@ -336,6 +374,8 @@ grep -Fq 'node_ostringstream_compat_patch_sha256' "$ROOT/scripts/build-node-v023
 grep -Fq 'ostringstream-rvalue-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node-v26.12.1-i686-v8-memory-span-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'node_v8_memory_span_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'patch-node-simdjson-inline-odr.py' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_simdjson_odr_patcher_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'v8-memory-span-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
 for memory_span_case in \
   memory_span_crdtp_nonempty_copy \
