@@ -1,0 +1,36 @@
+diff --git a/src/node_options.cc b/src/node_options.cc
+--- a/src/node_options.cc
++++ b/src/node_options.cc
+@@ -66,10 +66,11 @@ void DebugOptions::CheckOptions(std::vector<std::string>* errors,
+   inspect_publish_uid.console = false;
+   inspect_publish_uid.http = false;
+   for (const auto& entry : entries) {
+-    std::string_view destination(entry.data(), entry.size());
+-    if (destination == "stderr"sv) {
++    std::string destination;
++    for (char character : entry) destination.push_back(character);
++    if (destination == "stderr") {
+       inspect_publish_uid.console = true;
+-    } else if (destination == "http"sv) {
++    } else if (destination == "http") {
+       inspect_publish_uid.http = true;
+     } else {
+       errors->emplace_back("--inspect-publish-uid destination can be "
+--- a/src/tracing/agent_legacy.cc
++++ b/src/tracing/agent_legacy.cc
+@@ -269,3 +269,5 @@
+   for (const auto& s : parts) {
+-    categories_set.emplace(std::string(s.data(), s.size()));
++    std::string category;
++    for (char character : s) category.push_back(character);
++    categories_set.emplace(std::move(category));
+   }
+--- a/src/tracing/agent_perfetto.cc
++++ b/src/tracing/agent_perfetto.cc
+@@ -377,3 +377,5 @@
+   for (const auto& s : parts) {
+-    categories_set.emplace(std::string(s.data(), s.size()));
++    std::string category;
++    for (char character : s) category.push_back(character);
++    categories_set.emplace(std::move(category));
+   }

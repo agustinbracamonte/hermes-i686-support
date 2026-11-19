@@ -24,7 +24,36 @@ grep -Fq 'GITHUB_STEP_SUMMARY' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 patch_fixture="$TMP/node-source"
 mkdir -p "$patch_fixture/deps/zlib" "$patch_fixture/deps/openssl" \
   "$patch_fixture/deps/v8/src/base" "$patch_fixture/deps/v8/src/strings" \
-  "$patch_fixture/src"
+  "$patch_fixture/deps/v8/src/api" "$patch_fixture/deps/v8/src/inspector" \
+  "$patch_fixture/deps/simdjson" "$patch_fixture/src/tracing" "$patch_fixture/src"
+cp "$ROOT/tests/fixtures/node-simdjson-odr/simdjson.h" \
+  "$patch_fixture/deps/simdjson/simdjson.h"
+cat >"$patch_fixture/src/node_options.cc" <<'CPP'
+  inspect_publish_uid.console = false;
+  inspect_publish_uid.http = false;
+  for (const auto& entry : entries) {
+    std::string_view destination(entry.data(), entry.size());
+    if (destination == "stderr"sv) {
+      inspect_publish_uid.console = true;
+    } else if (destination == "http"sv) {
+      inspect_publish_uid.http = true;
+    } else {
+      errors->emplace_back("--inspect-publish-uid destination can be "
+                           "stderr or http");
+    }
+  }
+CPP
+for tracing_file in agent_legacy.cc agent_perfetto.cc; do
+  cat >"$patch_fixture/src/tracing/$tracing_file" <<'CPP'
+
+  std::set<std::string> categories_set;
+  for (const auto& s : parts) {
+    categories_set.emplace(std::string(s.data(), s.size()));
+  }
+
+  tracing_file_writer_ =
+CPP
+done
 cat >"$patch_fixture/deps/zlib/zlib.gyp" <<'GYP'
             ['target_arch in "ia32 x64" and OS!="ios"', {
               'defines': [ 'INFLATE_CHUNK_SIMD_SSE2' ],
@@ -91,10 +120,123 @@ cat >"$patch_fixture/deps/v8/src/strings/owning-external-string-resource.h" <<'C
   }
 
 CPP
+cat >"$patch_fixture/deps/v8/src/base/macros.h" <<'CPP'
+      std::is_trivially_copyable_v<Dest>,
+      "bit_cast requires the destination type to be trivially copyable");
+
+  return std::bit_cast<Dest, Source>(source);
+}
+
+}  // namespace v8::base
+CPP
+cat >"$patch_fixture/deps/v8/src/api/api.cc" <<'CPP'
+
+std::string SourceLocation::ToString() const {
+  if (!*this) return {};
+  return (std::ostringstream{} << loc_.function_name() << '@'
+                               << loc_.file_name() << ':' << loc_.line())
+      .str();
+}
+
+}  // namespace v8
+CPP
+cat >"$patch_fixture/deps/v8/src/inspector/string-util.h" <<'CPP'
+class Binary {
+ public:
+  String toBase64() const;
+  static Binary fromBase64(const String& base64, bool* success);
+  static Binary fromSpan(v8_crdtp::span<uint8_t> span) {
+    return fromSpan(v8::MemorySpan<const uint8_t>(span.begin(), span.size()));
+  }
+  static Binary fromSpan(v8::MemorySpan<const uint8_t> span) {
+    return Binary(
+        std::make_shared<std::vector<uint8_t>>(span.begin(), span.end()));
+  }
+
+ private:
+  std::shared_ptr<std::vector<uint8_t>> bytes_;
+  explicit Binary(std::shared_ptr<std::vector<uint8_t>> bytes)
+      : bytes_(bytes) {}
+};
+CPP
+cat >"$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc" <<'CPP'
+    auto cachedScriptIt =
+        std::find_if(m_cachedScripts.begin(), m_cachedScripts.end(),
+                     [&scriptId](const CachedScript& cachedScript) {
+                       return cachedScript.scriptId == scriptId;
+                     });
+    if (cachedScriptIt != m_cachedScripts.end()) {
+      *scriptSource = cachedScriptIt->source;
+      *bytecode = protocol::Binary::fromSpan(v8::MemorySpan<const uint8_t>(
+          cachedScriptIt->bytecode.begin(), cachedScriptIt->bytecode.size()));
+      return Response::Success();
+    }
+#if V8_ENABLE_WEBASSEMBLY
+  if (span.size() > kWasmBytecodeMaxLength) {
+      return Response::ServerError(kWasmBytecodeExceedsTransferLimit);
+    }
+    *bytecode = protocol::Binary::fromSpan(span);
+  }
+#endif  // V8_ENABLE_WEBASSEMBLY
+  return Response::Success();
+  if (span.size() > kWasmBytecodeMaxLength) {
+    return Response::ServerError(kWasmBytecodeExceedsTransferLimit);
+  }
+  *bytecode = protocol::Binary::fromSpan(span);
+  return Response::Success();
+#else
+  return Response::ServerError("WebAssembly is disabled");
+#endif
+CPP
 patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+patch --silent --dry-run --batch --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+patch --silent --batch --forward --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+python3 "$ROOT/scripts/patch-node-simdjson-inline-odr.py" \
+  "$patch_fixture/deps/simdjson/simdjson.h"
+python3 "$ROOT/scripts/patch-node-simdjson-inline-odr.py" \
+  "$patch_fixture/deps/simdjson/simdjson.h"
+[[ $(grep -Fc 'inline SIMDJSON_CONSTEXPR_STRING void append_uint' \
+  "$patch_fixture/deps/simdjson/simdjson.h") -eq 9 ]]
+[[ $(grep -Fc 'inline SIMDJSON_CONSTEXPR_STRING void append_byte' \
+  "$patch_fixture/deps/simdjson/simdjson.h") -eq 9 ]]
+partial_simdjson_fixture="$TMP/node-simdjson-odr-partial.h"
+cp "$ROOT/tests/fixtures/node-simdjson-odr/simdjson.h" "$partial_simdjson_fixture"
+python3 - "$partial_simdjson_fixture" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = "SIMDJSON_CONSTEXPR_STRING void append_uint("
+if text.count(needle) != 9:
+    raise SystemExit("unexpected simdjson ODR fixture count")
+path.write_text(text.replace(needle, "inline " + needle, 1))
+PY
+partial_before=$(sha256sum "$partial_simdjson_fixture" | awk '{print $1}')
+if python3 "$ROOT/scripts/patch-node-simdjson-inline-odr.py" \
+  "$partial_simdjson_fixture" >"$TMP/node-simdjson-partial.log" 2>&1; then
+  echo 'simdjson ODR patcher accepted a partially patched source' >&2
+  exit 1
+fi
+partial_after=$(sha256sum "$partial_simdjson_fixture" | awk '{print $1}')
+[[ "$partial_before" == "$partial_after" ]]
 grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
 [[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
 grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
@@ -106,7 +248,105 @@ grep -Fq 'return OwnedVector<T>(std::unique_ptr<T[]>(new T[size]), size);' \
   "$patch_fixture/deps/v8/src/base/vector.h"
 grep -Fq 'return std::unique_ptr<CharT[]>(new CharT[length]);' \
   "$patch_fixture/deps/v8/src/strings/owning-external-string-resource.h"
+grep -Fq 'for (char character : entry) destination.push_back(character);' \
+  "$patch_fixture/src/node_options.cc"
+! grep -Fq 'entry.data(), entry.size()' "$patch_fixture/src/node_options.cc"
+for tracing_file in agent_legacy.cc agent_perfetto.cc; do
+  grep -Fq 'for (char character : s) category.push_back(character);' \
+    "$patch_fixture/src/tracing/$tracing_file"
+  grep -Fq 'categories_set.emplace(std::move(category));' \
+    "$patch_fixture/src/tracing/$tracing_file"
+  ! grep -Fq 's.data(), s.size()' "$patch_fixture/src/tracing/$tracing_file"
+done
+grep -Fq 'defined(__i386__) && defined(__clang__) && !defined(__cpp_lib_bit_cast)' \
+  "$patch_fixture/deps/v8/src/base/macros.h"
+grep -Fq 'return __builtin_bit_cast(Dest, source);' "$patch_fixture/deps/v8/src/base/macros.h"
+! grep -Fq 'return std::bit_cast<Dest, Source>(source);' "$patch_fixture/deps/v8/src/base/macros.h"
+grep -Fq 'defined(__i386__) && defined(__clang__)' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'std::ostringstream stream;' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'stream << loc_.function_name()' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'loc_.file_name()' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'loc_.line()' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq 'return stream.str();' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq '#else' "$patch_fixture/deps/v8/src/api/api.cc"
+grep -Fq '#if defined(__i386__) && defined(__linux__)' \
+  "$patch_fixture/deps/v8/src/inspector/string-util.h"
+grep -Fq '#if defined(__i386__) && defined(__linux__)' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc"
+grep -Fq 'return fromBytes(span.data(), span.size());' \
+  "$patch_fixture/deps/v8/src/inspector/string-util.h"
+grep -Fq 'protocol::Binary::fromBytes(' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc"
+grep -Fq 'cachedScriptIt->bytecode.data(), cachedScriptIt->bytecode.size());' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc"
+[[ $(grep -Fc 'protocol::Binary::fromBytes(span.data(), span.size())' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc") -eq 2 ]]
+grep -Fq 'protocol::Binary::fromSpan(span)' \
+  "$patch_fixture/deps/v8/src/inspector/v8-debugger-agent-impl.cc"
 ! grep -R -Fq 'make_unique_for_overwrite' "$patch_fixture/src" "$patch_fixture/deps/v8"
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$ROOT/tests/fixtures/node-ranges-split-compat.cpp" \
+  -o "$TMP/node-ranges-split-compat"
+[[ $("$TMP/node-ranges-split-compat") == 'ranges_split_view=PASS' ]]
+bit_cast_compiler=${CXX:-c++}
+"$bit_cast_compiler" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$ROOT/tests/fixtures/node-bit-cast-compat.cpp" -o "$TMP/node-bit-cast-standard"
+"$TMP/node-bit-cast-standard"
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$ROOT/tests/fixtures/node-ostringstream-rvalue-compat.cpp" \
+  -o "$TMP/node-ostringstream-standard"
+"$TMP/node-ostringstream-standard"
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  -DHERMES_FORCE_NODE_I686_OSSTREAM_COMPAT \
+  "$ROOT/tests/fixtures/node-ostringstream-rvalue-compat.cpp" \
+  -o "$TMP/node-ostringstream-i686-fallback"
+"$TMP/node-ostringstream-i686-fallback"
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  "$ROOT/tests/fixtures/node-v8-memory-span-compat.cpp" \
+  -o "$TMP/node-v8-memory-span-compat"
+expected_memory_span_output=$'memory_span_crdtp_nonempty_copy=PASS\nmemory_span_crdtp_empty_copy=PASS\nmemory_span_cached_nonempty_copy=PASS\nmemory_span_cached_empty_copy=PASS\nmemory_span_wasm_nonempty_copy=PASS\nmemory_span_wasm_empty_copy=PASS'
+[[ $("$TMP/node-v8-memory-span-compat") == "$expected_memory_span_output" ]]
+"${CXX:-c++}" -std=c++20 -O2 -Wall -Wextra -Werror \
+  -DHERMES_FORCE_NODE_I686_V8_MEMORY_SPAN_COMPAT \
+  "$ROOT/tests/fixtures/node-v8-memory-span-compat.cpp" \
+  -o "$TMP/node-v8-memory-span-i686-fallback"
+[[ $("$TMP/node-v8-memory-span-i686-fallback") == "$expected_memory_span_output" ]]
+"${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra -Werror \
+  -I"$patch_fixture/deps/simdjson" \
+  "$ROOT/tests/fixtures/node-simdjson-odr-main.cpp" \
+  "$ROOT/tests/fixtures/node-simdjson-odr-a.cpp" \
+  "$ROOT/tests/fixtures/node-simdjson-odr-b.cpp" \
+  -o "$TMP/node-simdjson-odr"
+[[ $("$TMP/node-simdjson-odr") == 'simdjson_header_odr=PASS' ]]
+mkdir -p "$TMP/legacy-cxx-headers"
+: >"$TMP/legacy-cxx-headers/bit"
+cat >"$TMP/legacy-cxx-headers/type_traits" <<'CPP'
+namespace std {
+template <class T>
+inline constexpr bool is_trivially_copyable_v = __is_trivially_copyable(T);
+}
+CPP
+"$bit_cast_compiler" -std=c++20 -O2 -Wall -Wextra -Werror -nostdinc++ \
+  -D__i386__ -D__clang__ -isystem "$TMP/legacy-cxx-headers" \
+  "$ROOT/tests/fixtures/node-bit-cast-compat.cpp" \
+  -o "$TMP/node-bit-cast-i686-fallback"
+"$TMP/node-bit-cast-i686-fallback"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
+patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-bit-cast-compat.patch"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
+patch --silent --batch --reverse --fuzz=0 -p1 -d "$patch_fixture" \
+  <"$ROOT/patches/node-v26.12.1-i686-ranges-compat.patch"
 patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$patch_fixture" \
   <"$ROOT/patches/node-v26.12.1-i686-build-fixes.patch"
 grep -Fq 'readonly CXX_HEADERS_PACKAGE=libstdc++-11-dev' "$ROOT/scripts/build-node-v0232-i686.sh"
@@ -122,11 +362,40 @@ grep -Fq 'verify_cxx_header_selection' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'CXX_RUNTIME_PACKAGE_VERSION' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'GLIBCXX_3.4.28' "$ROOT/scripts/build-node-v0232-i686.sh"
 grep -Fq 'source-location-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'ranges-split-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'bit-cast-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-v26.12.1-i686-ranges-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-v26.12.1-i686-bit-cast-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_i686_build_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_ranges_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_bit_cast_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-v26.12.1-i686-ostringstream-rvalue-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_ostringstream_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'ostringstream-rvalue-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node-v26.12.1-i686-v8-memory-span-compat.patch' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_v8_memory_span_compat_patch_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'patch-node-simdjson-inline-odr.py' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'node_simdjson_odr_patcher_sha256' "$ROOT/scripts/build-node-v0232-i686.sh"
+grep -Fq 'v8-memory-span-probe' "$ROOT/scripts/build-node-v0232-i686.sh"
+for memory_span_case in \
+  memory_span_crdtp_nonempty_copy \
+  memory_span_crdtp_empty_copy \
+  memory_span_cached_nonempty_copy \
+  memory_span_cached_empty_copy \
+  memory_span_wasm_nonempty_copy \
+  memory_span_wasm_empty_copy; do
+  grep -Fq "$memory_span_case=PASS" "$ROOT/scripts/build-node-v0232-i686.sh"
+done
+grep -Fq 'node_patch_set_fingerprint' "$ROOT/scripts/build-node-v0232-i686.sh"
 sed -n '/^compile_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
 sed -n '/^install_build() {/,/^}/p' "$ROOT/scripts/build-node-v0232-i686.sh" | \
   grep -Fq 'CXXFLAGS="-O2 -g0 ${CXX_HEADER_FLAGS[*]}"'
 grep -Fq 'node-source-location-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-ranges-split-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-bit-cast-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-ostringstream-rvalue-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
+grep -Fq 'node-v8-memory-span-probe.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.txt' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'node-cxx-header-selection.trace' "$ROOT/scripts/ci-v0232-i686-runtime-build.sh"
 grep -Fq 'C++ standard-library selection trace (Bullseye vector header missing)' "$ROOT/scripts/build-node-v0232-i686.sh"

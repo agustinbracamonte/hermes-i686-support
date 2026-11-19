@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - codex/v0232-node-clang-19
+      - codex/v0232-cpython-linux-compiler-guard
     types:
       - opened
       - reopened

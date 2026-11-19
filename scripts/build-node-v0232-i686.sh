@@ -10,7 +10,18 @@ source "$SCRIPT_DIR/v0232-node-toolchain.sh"
 
 readonly VERSION=26.12.1
 readonly I686_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-build-fixes.patch"
+readonly RANGES_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-ranges-compat.patch"
+readonly BIT_CAST_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-bit-cast-compat.patch"
+readonly OSSTREAM_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
+readonly MEMORY_SPAN_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+readonly SIMDJSON_ODR_PATCHER="$SCRIPT_DIR/patch-node-simdjson-inline-odr.py"
 readonly I686_PATCH_SHA256=$(v0232_sha256 "$I686_PATCH")
+readonly RANGES_PATCH_SHA256=$(v0232_sha256 "$RANGES_PATCH")
+readonly BIT_CAST_PATCH_SHA256=$(v0232_sha256 "$BIT_CAST_PATCH")
+readonly OSSTREAM_PATCH_SHA256=$(v0232_sha256 "$OSSTREAM_PATCH")
+readonly MEMORY_SPAN_PATCH_SHA256=$(v0232_sha256 "$MEMORY_SPAN_PATCH")
+readonly SIMDJSON_ODR_PATCHER_SHA256=$(v0232_sha256 "$SIMDJSON_ODR_PATCHER")
+readonly PATCH_SET_FINGERPRINT=$(v0232_fingerprint "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$BIT_CAST_PATCH_SHA256" "$OSSTREAM_PATCH_SHA256" "$MEMORY_SPAN_PATCH_SHA256" "$SIMDJSON_ODR_PATCHER_SHA256")
 readonly SOURCE_URL=https://nodejs.org/dist/v26.12.1/node-v26.12.1.tar.xz
 readonly SOURCE_SHA256=053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c
 readonly SOURCE_SHASUMS=https://nodejs.org/dist/v26.12.1/SHASUMS256.txt
@@ -21,12 +32,25 @@ readonly CXX_HEADERS_ARCH=i386
 readonly CXX_HEADERS_URL=https://deb.debian.org/debian/pool/main/g/gcc-11/libstdc++-11-dev_11.3.0-12_i386.deb
 readonly CXX_HEADERS_SHA256=8402d1e5e1f09308fd5273b5554476c8ee6fc55c984ef2fe55f46ef7b117f58c
 readonly SOURCE_LOCATION_FIXTURE="$SCRIPT_DIR/../tests/fixtures/node-source-location.cpp"
+readonly RANGES_FIXTURE="$SCRIPT_DIR/../tests/fixtures/node-ranges-split-compat.cpp"
+readonly BIT_CAST_FIXTURE="$SCRIPT_DIR/../tests/fixtures/node-bit-cast-compat.cpp"
+readonly OSSTREAM_FIXTURE="$SCRIPT_DIR/../tests/fixtures/node-ostringstream-rvalue-compat.cpp"
+readonly MEMORY_SPAN_FIXTURE="$SCRIPT_DIR/../tests/fixtures/node-v8-memory-span-compat.cpp"
 readonly SCRIPT_FINGERPRINT=$(v0232_fingerprint \
   "$(v0232_sha256 "$0")" \
   "$(v0232_sha256 "$SCRIPT_DIR/v0232-i686-build-common.sh")" \
   "$(v0232_sha256 "$SCRIPT_DIR/v0232-node-toolchain.sh")" \
   "$(v0232_sha256 "$SOURCE_LOCATION_FIXTURE")" \
-  "$I686_PATCH_SHA256")
+  "$(v0232_sha256 "$RANGES_FIXTURE")" \
+  "$(v0232_sha256 "$BIT_CAST_FIXTURE")" \
+  "$(v0232_sha256 "$OSSTREAM_FIXTURE")" \
+  "$(v0232_sha256 "$MEMORY_SPAN_FIXTURE")" \
+  "$I686_PATCH_SHA256" \
+  "$RANGES_PATCH_SHA256" \
+  "$BIT_CAST_PATCH_SHA256" \
+  "$OSSTREAM_PATCH_SHA256" \
+  "$MEMORY_SPAN_PATCH_SHA256" \
+  "$SIMDJSON_ODR_PATCHER_SHA256")
 
 MODE=build
 case "${1:-}" in
@@ -80,7 +104,7 @@ fi
 
 v0232_need awk curl flock sha256sum tar
 if [[ "$MODE" == build ]]; then
-  v0232_need diff dpkg-deb dpkg-query ld ldd make mktemp patch paste readelf readlink sort
+  v0232_need diff dpkg-deb dpkg-query ld ldd make mktemp patch paste python3 readelf readlink sort
   command -v "$CC_BIN" >/dev/null 2>&1 || v0232_die "missing C compiler: $CC_BIN"
   command -v "$CXX_BIN" >/dev/null 2>&1 || v0232_die "missing C++ compiler: $CXX_BIN"
   check_compiler
@@ -281,14 +305,24 @@ verify_cxx_header_selection() {
 }
 
 apply_i686_build_patches() {
-  if patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$SOURCE" <"$I686_PATCH" >/dev/null 2>&1; then
-    v0232_log "Node i686 build patches are already applied"
-    return 0
-  fi
-  patch --silent --batch --forward --fuzz=0 -p1 -d "$SOURCE" <"$I686_PATCH"
+  apply_one_i686_patch() {
+    local patch_file=$1
+    if patch --silent --dry-run --reverse --fuzz=0 -p1 -d "$SOURCE" <"$patch_file" >/dev/null 2>&1; then
+      v0232_log "$(basename "$patch_file") is already applied"
+      return 0
+    fi
+    patch --silent --batch --forward --fuzz=0 -p1 -d "$SOURCE" <"$patch_file"
+  }
+
+  apply_one_i686_patch "$I686_PATCH"
+  apply_one_i686_patch "$RANGES_PATCH"
+  apply_one_i686_patch "$BIT_CAST_PATCH"
+  apply_one_i686_patch "$OSSTREAM_PATCH"
+  apply_one_i686_patch "$MEMORY_SPAN_PATCH"
+  python3 "$SIMDJSON_ODR_PATCHER" "$SOURCE/deps/simdjson/simdjson.h"
 }
 
-PATCH_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$I686_PATCH_SHA256")
+PATCH_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$PATCH_SET_FINGERPRINT")
 v0232_checkpoint "$STATE" node-i686-build-patches "$PATCH_FINGERPRINT" "$SOURCE/deps/openssl/openssl.gyp" apply_i686_build_patches
 
 NODE_PYTHON="$CPYTHON_PREFIX/bin/python3.14"
@@ -308,6 +342,83 @@ probe_source_location() {
   {
     printf 'package=%s=%s\npackage_arch=%s\npackage_sha256=%s\n' "$CXX_HEADERS_PACKAGE" "$CXX_HEADERS_VERSION" "$CXX_HEADERS_ARCH" "$CXX_HEADERS_SHA256"
     printf 'source_location_overlay=%s\ncompiler=%s\n' "$CXX_SOURCE_LOCATION_OVERLAY" "$CXX_INFO"
+    cat "$probe_report"
+  } >"$probe_report.tmp"
+  mv -f -- "$probe_report.tmp" "$probe_report"
+  cat "$probe_report"
+}
+
+probe_ranges_split() {
+  local probe_binary="$ROOT/tmp/node-ranges-split-probe"
+  local probe_report="$RESULTS/node-ranges-split-probe.txt"
+  mkdir -p "$(dirname "$probe_binary")"
+  "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror "${CXX_HEADER_FLAGS[@]}" \
+    "$RANGES_FIXTURE" -o "$probe_binary"
+  v0232_assert_i686_elf "$probe_binary"
+  "$probe_binary" >"$probe_report"
+  grep -Fxq 'ranges_split_view=PASS' "$probe_report" || \
+    v0232_die "Node's GCC 10 ranges split compatibility probe returned unexpected output"
+  rm -f -- "$probe_binary"
+  {
+    printf 'compiler=%s\nnode_i686_build_patch_sha256=%s\nnode_ranges_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
+      "$CXX_INFO" "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
+    cat "$probe_report"
+  } >"$probe_report.tmp"
+  mv -f -- "$probe_report.tmp" "$probe_report"
+  cat "$probe_report"
+}
+
+probe_bit_cast() {
+  local probe_binary="$ROOT/tmp/node-bit-cast-probe"
+  local probe_report="$RESULTS/node-bit-cast-probe.txt"
+  mkdir -p "$(dirname "$probe_binary")"
+  "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror "${CXX_HEADER_FLAGS[@]}" \
+    "$BIT_CAST_FIXTURE" -o "$probe_binary"
+  v0232_assert_i686_elf "$probe_binary"
+  "$probe_binary"
+  rm -f -- "$probe_binary"
+  {
+    printf 'compiler=%s\nnode_bit_cast_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
+      "$CXX_INFO" "$BIT_CAST_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
+    printf 'node_bit_cast_probe=PASS\n'
+  } >"$probe_report.tmp"
+  mv -f -- "$probe_report.tmp" "$probe_report"
+  cat "$probe_report"
+}
+
+probe_ostringstream_compat() {
+  local probe_binary="$ROOT/tmp/node-ostringstream-rvalue-probe"
+  local probe_report="$RESULTS/node-ostringstream-rvalue-probe.txt"
+  mkdir -p "$(dirname "$probe_binary")"
+  "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror "${CXX_HEADER_FLAGS[@]}" \
+    "$OSSTREAM_FIXTURE" -o "$probe_binary"
+  v0232_assert_i686_elf "$probe_binary"
+  "$probe_binary"
+  rm -f -- "$probe_binary"
+  {
+    printf 'compiler=%s\nnode_ostringstream_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
+      "$CXX_INFO" "$OSSTREAM_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
+    printf 'node_ostringstream_rvalue_compat_probe=PASS\n'
+  } >"$probe_report.tmp"
+  mv -f -- "$probe_report.tmp" "$probe_report"
+  cat "$probe_report"
+}
+
+probe_memory_span_compat() {
+  local probe_binary="$ROOT/tmp/node-v8-memory-span-probe"
+  local probe_report="$RESULTS/node-v8-memory-span-probe.txt"
+  mkdir -p "$(dirname "$probe_binary")"
+  "$CXX_BIN" -std=c++20 -O2 -Wall -Wextra -Werror "${CXX_HEADER_FLAGS[@]}" \
+    "$MEMORY_SPAN_FIXTURE" -o "$probe_binary"
+  v0232_assert_i686_elf "$probe_binary"
+  "$probe_binary" >"$probe_report"
+  local expected_output=$'memory_span_crdtp_nonempty_copy=PASS\nmemory_span_crdtp_empty_copy=PASS\nmemory_span_cached_nonempty_copy=PASS\nmemory_span_cached_empty_copy=PASS\nmemory_span_wasm_nonempty_copy=PASS\nmemory_span_wasm_empty_copy=PASS'
+  [[ $(cat "$probe_report") == "$expected_output" ]] || \
+    v0232_die "Node's V8 memory-span copy probe returned unexpected output"
+  rm -f -- "$probe_binary"
+  {
+    printf 'compiler=%s\nnode_v8_memory_span_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
+      "$CXX_INFO" "$MEMORY_SPAN_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
     cat "$probe_report"
   } >"$probe_report.tmp"
   mv -f -- "$probe_report.tmp" "$probe_report"
@@ -398,7 +509,10 @@ if (!locale.toLowerCase().startsWith('es')) throw new Error(`Spanish locale data
 console.log(`intl_locale=${locale}`);
 NODE
   {
-    printf 'source_url=%s\nsource_sha256=%s\nsource_shasums=%s\nsource_tag_commit=%s\nnode_i686_patch_sha256=%s\n' "$SOURCE_URL" "$SOURCE_SHA256" "$SOURCE_SHASUMS" "$SOURCE_COMMIT" "$I686_PATCH_SHA256"
+    printf 'source_url=%s\nsource_sha256=%s\nsource_shasums=%s\nsource_tag_commit=%s\nnode_i686_build_patch_sha256=%s\nnode_ranges_compat_patch_sha256=%s\nnode_bit_cast_compat_patch_sha256=%s\nnode_ostringstream_compat_patch_sha256=%s\nnode_simdjson_odr_patcher_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
+      "$SOURCE_URL" "$SOURCE_SHA256" "$SOURCE_SHASUMS" "$SOURCE_COMMIT" \
+      "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$BIT_CAST_PATCH_SHA256" "$OSSTREAM_PATCH_SHA256" "$SIMDJSON_ODR_PATCHER_SHA256" "$PATCH_SET_FINGERPRINT"
+    printf 'node_v8_memory_span_compat_patch_sha256=%s\n' "$MEMORY_SPAN_PATCH_SHA256"
     printf 'cxx_headers_package=%s=%s\ncxx_headers_arch=%s\ncxx_headers_url=%s\ncxx_headers_sha256=%s\ncxx_headers_metadata=Debian Bookworm signed main i386 Packages index\n' "$CXX_HEADERS_PACKAGE" "$CXX_HEADERS_VERSION" "$CXX_HEADERS_ARCH" "$CXX_HEADERS_URL" "$CXX_HEADERS_SHA256"
     printf 'cxx_headers_runtime_policy=extracted headers only; no GCC 11 runtime installed\nsource_location_probe=PASS; pointer-sized std::source_location; caller file/function/line checked\n'
     printf 'compiler_libstdcxx_path=%s\nruntime_libstdcxx_package=libstdc++6=%s\nnode_libstdcxx_path=%s\nnode_glibcxx_requirements=%s\nnode_glibcxx_max=%s\n' "$CXX_RUNTIME_LIBSTDCPP_PATH" "$CXX_RUNTIME_PACKAGE_VERSION" "$NODE_CXX_RUNTIME_PATH" "$NODE_GLIBCXX_REQUIREMENTS" "$NODE_GLIBCXX_MAX"
@@ -411,7 +525,15 @@ NODE
 
 SOURCE_LOCATION_FINGERPRINT=$(v0232_fingerprint "$CXX_HEADERS_TREE_FINGERPRINT" "$CXX_HEADERS_SHA256" "$CXX_INFO" "$CXX_RUNTIME_LIBSTDCPP_PATH" "$CXX_RUNTIME_PACKAGE_VERSION" "${CXX_HEADER_FLAGS[*]}" "$(v0232_sha256 "$SOURCE_LOCATION_FIXTURE")")
 v0232_checkpoint "$STATE" source-location-probe "$SOURCE_LOCATION_FINGERPRINT" "$RESULTS/node-source-location-probe.txt" probe_source_location
-CONFIG_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$PATCH_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT" "$CXX_HEADERS_TREE_FINGERPRINT" "$SOURCE_LOCATION_FINGERPRINT" "$SCRIPT_FINGERPRINT" "$PREFIX" "$PY_INFO" "CC=$CC_BIN" "CXX=$CXX_BIN" 'CFLAGS=-O2 -g0' "CXXFLAGS=-O2 -g0 ${CXX_HEADER_FLAGS[*]}" '--dest-cpu=ia32' '--with-intl=full-icu' '--openssl-no-asm')
+RANGES_FINGERPRINT=$(v0232_fingerprint "$PATCH_SET_FINGERPRINT" "$CXX_INFO" "$CXX_RUNTIME_LIBSTDCPP_PATH" "${CXX_HEADER_FLAGS[*]}" "$(v0232_sha256 "$RANGES_FIXTURE")")
+v0232_checkpoint "$STATE" ranges-split-probe "$RANGES_FINGERPRINT" "$RESULTS/node-ranges-split-probe.txt" probe_ranges_split
+BIT_CAST_FINGERPRINT=$(v0232_fingerprint "$PATCH_SET_FINGERPRINT" "$CXX_INFO" "$CXX_RUNTIME_LIBSTDCPP_PATH" "${CXX_HEADER_FLAGS[*]}" "$(v0232_sha256 "$BIT_CAST_FIXTURE")")
+v0232_checkpoint "$STATE" bit-cast-probe "$BIT_CAST_FINGERPRINT" "$RESULTS/node-bit-cast-probe.txt" probe_bit_cast
+OSSTREAM_FINGERPRINT=$(v0232_fingerprint "$PATCH_SET_FINGERPRINT" "$CXX_INFO" "$CXX_RUNTIME_LIBSTDCPP_PATH" "${CXX_HEADER_FLAGS[*]}" "$(v0232_sha256 "$OSSTREAM_FIXTURE")")
+v0232_checkpoint "$STATE" ostringstream-rvalue-probe "$OSSTREAM_FINGERPRINT" "$RESULTS/node-ostringstream-rvalue-probe.txt" probe_ostringstream_compat
+MEMORY_SPAN_FINGERPRINT=$(v0232_fingerprint "$PATCH_SET_FINGERPRINT" "$CXX_INFO" "$CXX_RUNTIME_LIBSTDCPP_PATH" "${CXX_HEADER_FLAGS[*]}" "$(v0232_sha256 "$MEMORY_SPAN_FIXTURE")")
+v0232_checkpoint "$STATE" v8-memory-span-probe "$MEMORY_SPAN_FINGERPRINT" "$RESULTS/node-v8-memory-span-probe.txt" probe_memory_span_compat
+CONFIG_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$PATCH_FINGERPRINT" "$TOOLCHAIN_FINGERPRINT" "$CXX_HEADERS_TREE_FINGERPRINT" "$SOURCE_LOCATION_FINGERPRINT" "$RANGES_FINGERPRINT" "$BIT_CAST_FINGERPRINT" "$OSSTREAM_FINGERPRINT" "$MEMORY_SPAN_FINGERPRINT" "$SCRIPT_FINGERPRINT" "$PREFIX" "$PY_INFO" "CC=$CC_BIN" "CXX=$CXX_BIN" 'CFLAGS=-O2 -g0' "CXXFLAGS=-O2 -g0 ${CXX_HEADER_FLAGS[*]}" '--dest-cpu=ia32' '--with-intl=full-icu' '--openssl-no-asm')
 BUILD_FINGERPRINT=$(v0232_fingerprint "$CONFIG_FINGERPRINT" 'make -j1')
 INSTALL_FINGERPRINT=$(v0232_fingerprint "$BUILD_FINGERPRINT" "$PREFIX" 'make -j1 install')
 SMOKE_FINGERPRINT=$(v0232_fingerprint "$INSTALL_FINGERPRINT" 'ELF32; Node; npm; WebAssembly shared-memory; worker_threads; es-AR Intl')
