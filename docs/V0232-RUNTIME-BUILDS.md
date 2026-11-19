@@ -1,6 +1,6 @@
 # Hermes v0.23.2 i686 runtime builds
 
-Updated 2026-11-19. This public workstream contains reviewable source-build procedures and records their evidence limits. It has no compiled CPython/Node/FFmpeg binaries, no wheelhouse, no Púlsar source, and no credentials.
+Updated 2026-11-19 05:31 UTC. This public workstream contains reviewable source-build procedures and records their evidence limits. It has no compiled CPython/Node/FFmpeg binaries, no wheelhouse, no Púlsar source, and no credentials.
 
 ## Locked source evidence
 
@@ -176,7 +176,7 @@ The local development environment is x86_64/ELF64. A read-only probe attempted t
 
 ## Next staging checks
 
-1. Retrieve PR #11 Actions run #28 (`44455559422`, job `135329601952`) after it reaches a terminal state. At 2026-11-19 04:24 UTC it remained in the exact-source-fetch/build step; the log endpoint returned `BlobNotFound`. Do not cancel, duplicate, or start another heavy build while it is active. Inspect terminal logs and hashes before selecting the next Node compatibility change. Continue to Node/npm ELF32 and pnpm WASM only after Node succeeds; do not treat hosted CI as B10 staging evidence.
+1. Recheck PR #11 Actions run #28 (`44455559422`, job `135329601952`) until it reaches a terminal state. At 2026-11-19 05:31 UTC it remained active. The workflow step named `Fetch the exact public PR source` also invokes the full source-build script: CPython, Node and pnpm run serially; timeout is 360 minutes. The 05:31:10 UTC log request returned `BlobNotFound` (request `da5ecdbc-601e-00b5-68e7-77617d000000`) and no artifacts exist yet. Do not cancel, duplicate, rerun, or start another heavy build while it is active. Inspect terminal logs and hashes before selecting the next Node compatibility change. Continue to Node/npm ELF32 and pnpm WASM only after Node succeeds; do not treat hosted CI as B10 staging evidence.
 2. Build CPython, then Node, serially; retain each result manifest and the source/system package records.
 3. Run verify-v0232-pnpm-wasm.sh --require-ia32 against the built Node. Capture memory use and check the offline install result.
 4. After the active Node build is terminal, run the FFmpeg recipe only in an isolated Bullseye i386 build root. Reuse the verified source checkpoint if this disposable workspace still exists; otherwise re-run only `--prepare-only` against the same pinned tag. Capture dependency versions and then run the separate `--runtime` verifier. Do not infer PM compatibility until its dynamic library closure and staging install are reconciled.
