@@ -61,7 +61,6 @@ v0232_require_serial
 CC_BIN=${CC:-gcc}
 
 assert_i686_bullseye() {
-  v0232_assert_i686_process
   local qemu_env
   for qemu_env in QEMU_LD_PREFIX QEMU_CPU QEMU_SET_ENV QEMU_UNSET_ENV; do
     [[ -z "${!qemu_env:-}" ]] || v0232_die "refusing emulated build environment ($qemu_env is set)"
@@ -69,6 +68,7 @@ assert_i686_bullseye() {
   if grep -qi qemu "/proc/$$/maps"; then
     v0232_die 'refusing a build shell with QEMU mapped into its process image'
   fi
+  v0232_assert_i686_process
   [[ "$(dpkg --print-architecture)" == i386 ]] || \
     v0232_die "dpkg architecture must be i386 (saw $(dpkg --print-architecture))"
   [[ "$(< /etc/debian_version)" == 11* ]] || \
