@@ -21,11 +21,13 @@ pkg_modules=$(sed -n '/readonly PKG_CONFIG_MODULES=(/,/^)/p' "$BUILD_SCRIPT")
 [[ "$pkg_modules" != *libmp3lame* ]]
 grep -Fq 'QEMU_LD_PREFIX QEMU_CPU QEMU_SET_ENV QEMU_UNSET_ENV' "$BUILD_SCRIPT"
 grep -Fq 'refusing a build shell with QEMU mapped' "$BUILD_SCRIPT"
-if QEMU_CPU=hermes-test "$BUILD_SCRIPT" --preflight-only >"$TMP/qemu-env.log" 2>&1; then
-  printf 'FFmpeg recipe unexpectedly accepted a QEMU-marked build environment\n' >&2
-  exit 1
-fi
-grep -Fq 'refusing emulated build environment (QEMU_CPU is set)' "$TMP/qemu-env.log"
+for qemu_env in QEMU_LD_PREFIX QEMU_CPU QEMU_SET_ENV QEMU_UNSET_ENV; do
+  if env "$qemu_env=hermes-test" "$BUILD_SCRIPT" --preflight-only >"$TMP/qemu-env.log" 2>&1; then
+    printf 'FFmpeg recipe unexpectedly accepted %s\n' "$qemu_env" >&2
+    exit 1
+  fi
+  grep -Fq "refusing emulated build environment ($qemu_env is set)" "$TMP/qemu-env.log"
+done
 configure_args=$(sed -n '/readonly CONFIGURE_ARGS=(/,/^)/p' "$BUILD_SCRIPT")
 [[ "$configure_args" != *'--enable-nonfree'* ]]
 if grep -Eq '(^|[[:space:]])(sudo|apt-get)[[:space:]]' "$BUILD_SCRIPT"; then
