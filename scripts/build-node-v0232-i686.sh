@@ -14,12 +14,14 @@ readonly RANGES_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-ranges-compat.p
 readonly BIT_CAST_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-bit-cast-compat.patch"
 readonly OSSTREAM_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-ostringstream-rvalue-compat.patch"
 readonly MEMORY_SPAN_PATCH="$SCRIPT_DIR/../patches/node-v26.12.1-i686-v8-memory-span-compat.patch"
+readonly SIMDJSON_ODR_PATCHER="$SCRIPT_DIR/patch-node-simdjson-inline-odr.py"
 readonly I686_PATCH_SHA256=$(v0232_sha256 "$I686_PATCH")
 readonly RANGES_PATCH_SHA256=$(v0232_sha256 "$RANGES_PATCH")
 readonly BIT_CAST_PATCH_SHA256=$(v0232_sha256 "$BIT_CAST_PATCH")
 readonly OSSTREAM_PATCH_SHA256=$(v0232_sha256 "$OSSTREAM_PATCH")
 readonly MEMORY_SPAN_PATCH_SHA256=$(v0232_sha256 "$MEMORY_SPAN_PATCH")
-readonly PATCH_SET_FINGERPRINT=$(v0232_fingerprint "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$BIT_CAST_PATCH_SHA256" "$OSSTREAM_PATCH_SHA256" "$MEMORY_SPAN_PATCH_SHA256")
+readonly SIMDJSON_ODR_PATCHER_SHA256=$(v0232_sha256 "$SIMDJSON_ODR_PATCHER")
+readonly PATCH_SET_FINGERPRINT=$(v0232_fingerprint "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$BIT_CAST_PATCH_SHA256" "$OSSTREAM_PATCH_SHA256" "$MEMORY_SPAN_PATCH_SHA256" "$SIMDJSON_ODR_PATCHER_SHA256")
 readonly SOURCE_URL=https://nodejs.org/dist/v26.12.1/node-v26.12.1.tar.xz
 readonly SOURCE_SHA256=053e3b296859b6d8d93f99ef97fa9cec1c4ee171c72968100c649978c1dbd38c
 readonly SOURCE_SHASUMS=https://nodejs.org/dist/v26.12.1/SHASUMS256.txt
@@ -47,7 +49,8 @@ readonly SCRIPT_FINGERPRINT=$(v0232_fingerprint \
   "$RANGES_PATCH_SHA256" \
   "$BIT_CAST_PATCH_SHA256" \
   "$OSSTREAM_PATCH_SHA256" \
-  "$MEMORY_SPAN_PATCH_SHA256")
+  "$MEMORY_SPAN_PATCH_SHA256" \
+  "$SIMDJSON_ODR_PATCHER_SHA256")
 
 MODE=build
 case "${1:-}" in
@@ -101,7 +104,7 @@ fi
 
 v0232_need awk curl flock sha256sum tar
 if [[ "$MODE" == build ]]; then
-  v0232_need diff dpkg-deb dpkg-query ld ldd make mktemp patch paste readelf readlink sort
+  v0232_need diff dpkg-deb dpkg-query ld ldd make mktemp patch paste python3 readelf readlink sort
   command -v "$CC_BIN" >/dev/null 2>&1 || v0232_die "missing C compiler: $CC_BIN"
   command -v "$CXX_BIN" >/dev/null 2>&1 || v0232_die "missing C++ compiler: $CXX_BIN"
   check_compiler
@@ -316,6 +319,7 @@ apply_i686_build_patches() {
   apply_one_i686_patch "$BIT_CAST_PATCH"
   apply_one_i686_patch "$OSSTREAM_PATCH"
   apply_one_i686_patch "$MEMORY_SPAN_PATCH"
+  python3 "$SIMDJSON_ODR_PATCHER" "$SOURCE/deps/simdjson/simdjson.h"
 }
 
 PATCH_FINGERPRINT=$(v0232_fingerprint "$SOURCE_FINGERPRINT" "$PATCH_SET_FINGERPRINT")
@@ -505,9 +509,9 @@ if (!locale.toLowerCase().startsWith('es')) throw new Error(`Spanish locale data
 console.log(`intl_locale=${locale}`);
 NODE
   {
-    printf 'source_url=%s\nsource_sha256=%s\nsource_shasums=%s\nsource_tag_commit=%s\nnode_i686_build_patch_sha256=%s\nnode_ranges_compat_patch_sha256=%s\nnode_bit_cast_compat_patch_sha256=%s\nnode_ostringstream_compat_patch_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
+    printf 'source_url=%s\nsource_sha256=%s\nsource_shasums=%s\nsource_tag_commit=%s\nnode_i686_build_patch_sha256=%s\nnode_ranges_compat_patch_sha256=%s\nnode_bit_cast_compat_patch_sha256=%s\nnode_ostringstream_compat_patch_sha256=%s\nnode_simdjson_odr_patcher_sha256=%s\nnode_patch_set_fingerprint=%s\n' \
       "$SOURCE_URL" "$SOURCE_SHA256" "$SOURCE_SHASUMS" "$SOURCE_COMMIT" \
-      "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$BIT_CAST_PATCH_SHA256" "$OSSTREAM_PATCH_SHA256" "$PATCH_SET_FINGERPRINT"
+      "$I686_PATCH_SHA256" "$RANGES_PATCH_SHA256" "$BIT_CAST_PATCH_SHA256" "$OSSTREAM_PATCH_SHA256" "$SIMDJSON_ODR_PATCHER_SHA256" "$PATCH_SET_FINGERPRINT"
     printf 'node_v8_memory_span_compat_patch_sha256=%s\n' "$MEMORY_SPAN_PATCH_SHA256"
     printf 'cxx_headers_package=%s=%s\ncxx_headers_arch=%s\ncxx_headers_url=%s\ncxx_headers_sha256=%s\ncxx_headers_metadata=Debian Bookworm signed main i386 Packages index\n' "$CXX_HEADERS_PACKAGE" "$CXX_HEADERS_VERSION" "$CXX_HEADERS_ARCH" "$CXX_HEADERS_URL" "$CXX_HEADERS_SHA256"
     printf 'cxx_headers_runtime_policy=extracted headers only; no GCC 11 runtime installed\nsource_location_probe=PASS; pointer-sized std::source_location; caller file/function/line checked\n'
