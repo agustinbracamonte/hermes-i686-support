@@ -1,6 +1,6 @@
 # Hermes v0.23.2 i686 runtime builds
 
-Updated 2026-11-18. This public workstream contains reproducible source-build procedures only. It has no compiled CPython/Node binaries, no wheelhouse, no Púlsar source, and no credentials.
+Updated 2026-11-19. This public workstream contains reviewable source-build procedures and records their evidence limits. It has no compiled CPython/Node/FFmpeg binaries, no wheelhouse, no Púlsar source, and no credentials.
 
 ## Locked source evidence
 
@@ -21,6 +21,7 @@ Scripts:
 
 - scripts/build-cpython-v0232-i686.sh
 - scripts/build-node-v0232-i686.sh
+- scripts/build-v0232-ffmpeg-i686.sh
 - scripts/v0232-i686-build-common.sh
 - scripts/v0232-node-toolchain.sh
 
@@ -39,6 +40,8 @@ scripts/build-node-v0232-i686.sh
 ~~~
 
 The Node recipe consumes the CPython 3.14.9 i686 interpreter produced in that same root. It configures --dest-cpu=ia32 --with-intl=full-icu --openssl-no-asm, keeps the bundled full ICU source, builds serially, installs under the root, and checks the resulting Node ELF32 header, Node/npm execution, process.arch, Spanish locale data, shared WebAssembly memory, and worker_threads. Node's zlib build has two ia32 targets that compile SSE2 intrinsics: `zlib_data_chunk_simd` and `zlib`. Run #7 showed the first patch covered only the latter; run #8 compiled both successfully. Run #8 then failed linking OpenSSL's helper executable because Clang emitted unresolved `__atomic_*` references. Node's own `node.gyp` already adds `-latomic` to its Linux/Clang target; the build patch now adds the same library only to OpenSSL CLI on Linux ia32/Clang. The combined patch also keeps the `-msse2` flags limited to the two ia32 zlib targets. The scoped zlib/OpenSSL patch hash before the GCC 10 allocation compatibility hunks is `c1b97940c0d05a25fe7a31647723e7444130be51ea5da297142e926ed2fa5a0a`; the current combined patch hash is `79a312253fa32b9bfd1409b218462547b0b2897d26d230b6b0b97adf503c8e45`. To support Bullseye libstdc++ 10, it replaces the four executable `std::make_unique_for_overwrite` call sites found in the pinned Node source with equivalent default-initialized `new T[n]` arrays; each caller writes the full allocated range before reading it. Patch application is resumable and the digest is included in the build fingerprint and result manifest. Preflight requires `sse2` in `/proc/cpuinfo`, intentionally refusing pre-SSE2 32-bit CPUs. Disabling OpenSSL assembly uses generic implementations and may reduce crypto throughput; measure it on Púlsar's target before accepting it. Result manifests include source hashes, patch hash, compiler/linker versions, architecture, required CPU feature, OpenSSL assembly mode, and installed executable hashes.
+
+PR #19 adds `scripts/build-v0232-ffmpeg-i686.sh`, pinned to the upstream `n9.0.1` tag object/commit/tree. It builds serially, rejects x86_64/QEMU execution, keeps outputs under a dedicated build root, records installed package/module versions, and uses a static ELF verifier plus a local archive digest. Host guards pass. On 2026-11-19, `--prepare-only` fetched 135 MiB and verified the exact tag object, commit, tree, clean checkout, and the pinned `configure` SHA-256. No compile was run. The Debian dependencies are not yet locked to a signed snapshot, so reproducibility across different package states is not claimed. No i686 FFmpeg hash or PM row exists. See [V0232-FFMPEG-VERIFICATION.md](V0232-FFMPEG-VERIFICATION.md) before preparing a dedicated Bullseye i386 build environment; review GPL redistribution terms before packaging.
 
 ## Isolated build option
 
@@ -168,5 +171,6 @@ These checks establish source, hash, PM staging, and host-side WASM behavior. Ho
 1. Retrieve PR #11 Actions run #27 (`44416379788`, job `135197659041`) after it reaches a terminal state. Inspect its logs and hashes before selecting the next compatibility change. Continue to Node/npm ELF32, runtime library requirements, and pnpm WASM offline installation only after Node builds successfully. Do not treat the hosted runner as B10 staging evidence.
 2. Build CPython, then Node, serially; retain each result manifest and the source/system package records.
 3. Run verify-v0232-pnpm-wasm.sh --require-ia32 against the built Node. Capture memory use and check the offline install result.
-4. Have Púlsar validate those outputs in its staging environment and reconcile the Node pin into its real lock. No staging host was accessed by this public task.
-5. Run the offline reconciler in Púlsar staging against its actual resolved plan, lock, and existing wheelhouse. Do not retrieve the reported 92 wheels again; resolve the nine gaps and document local source builds separately.
+4. After the active Node build is terminal, run the FFmpeg recipe only in an isolated Bullseye i386 build root. Reuse the verified source checkpoint if this disposable workspace still exists; otherwise re-run only `--prepare-only` against the same pinned tag. Capture dependency versions and then run the separate `--runtime` verifier. Do not infer PM compatibility until its dynamic library closure and staging install are reconciled.
+5. Have Púlsar validate outputs in its staging environment and reconcile the Node/FFmpeg pins into its real lock. No staging host was accessed by this public task.
+6. Run the offline reconciler in Púlsar staging against its actual resolved plan, lock, and existing wheelhouse. Do not retrieve the reported 92 wheels again; resolve the nine gaps and document local source builds separately.
