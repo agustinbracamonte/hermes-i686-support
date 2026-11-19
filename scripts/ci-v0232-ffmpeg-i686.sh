@@ -110,7 +110,7 @@ EOF
 
 sudo mkdir -p -- "$ROOTFS/work/source" "$ROOTFS/work/build"
 sudo mount --bind "$SOURCE_ROOT" "$ROOTFS/work/source"
-sudo mount --remount,bind,ro "$ROOTFS/work/source"
+sudo mount -o remount,bind,ro "$ROOTFS/work/source"
 sudo mount --bind "$BUILD_AREA" "$ROOTFS/work/build"
 sudo mount -t proc proc "$ROOTFS/proc"
 sudo mount --rbind /dev "$ROOTFS/dev"

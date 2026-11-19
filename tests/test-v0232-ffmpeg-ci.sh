@@ -36,6 +36,11 @@ if grep -Eiq 'upload-artifact|create-release|gh release|secrets\.|cache@|larger 
 fi
 
 grep -Fq 'snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT' "$CI_SCRIPT"
+grep -Fq 'sudo mount -o remount,bind,ro "$ROOTFS/work/source"' "$CI_SCRIPT"
+if grep -Fq 'sudo mount --remount' "$CI_SCRIPT"; then
+  printf 'hosted chroot bind remount must use mount -o syntax\n' >&2
+  exit 1
+fi
 grep -Fq 'make -j1' "$ROOT/scripts/build-v0232-ffmpeg-i686.sh"
 grep -Fq 'QEMU' "$ROOT/scripts/verify-v0232-ffmpeg-i686.sh"
 grep -Fq 'verify-v0232-ffmpeg-i686.sh --runtime' "$CI_SCRIPT"
