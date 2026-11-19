@@ -237,6 +237,10 @@ if python3 "$ROOT/scripts/patch-node-simdjson-inline-odr.py" \
 fi
 partial_after=$(sha256sum "$partial_simdjson_fixture" | awk '{print $1}')
 [[ "$partial_before" == "$partial_after" ]]
+[[ $(grep -Fc 'if (span.empty()) {' \
+  "$patch_fixture/deps/v8/src/inspector/string-util.h") -eq 2 ]]
+grep -Fq 'return fromSpan(v8::MemorySpan<const uint8_t>(span.begin(), span.size()));' \
+  "$patch_fixture/deps/v8/src/inspector/string-util.h"
 grep -Fq "['target_arch==\"ia32\"', {" "$patch_fixture/deps/zlib/zlib.gyp"
 [[ $(grep -Fc "'cflags': [ '-msse2' ]" "$patch_fixture/deps/zlib/zlib.gyp") -eq 2 ]]
 grep -Fq "['OS==\"linux\" and target_arch==\"ia32\" and clang==1', {" "$patch_fixture/deps/openssl/openssl.gyp"
