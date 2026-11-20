@@ -97,6 +97,31 @@ v0232_checkpoint() {
   v0232_log "checkpoint saved: $step"
 }
 
+v0232_assert_symlink_tree() {
+  local directory=$1
+  shift
+  local base link target allowed_root resolved_allowed permitted
+
+  base=$(realpath -e -- "$directory") || v0232_die "cannot resolve symlink tree directory: $directory"
+  while IFS= read -r -d '' link; do
+    target=$(realpath -m -- "$link") || v0232_die "cannot resolve symlink: $link"
+    if [[ "$target" == "$base" || "$target" == "$base/"* ]]; then
+      continue
+    fi
+    permitted=false
+    for allowed_root in "$@"; do
+      resolved_allowed=$(realpath -e -- "$allowed_root") || \
+        v0232_die "cannot resolve explicitly allowed symlink target root: $allowed_root"
+      if [[ "$target" == "$resolved_allowed" || "$target" == "$resolved_allowed/"* ]]; then
+        permitted=true
+        break
+      fi
+    done
+    [[ "$permitted" == true ]] || \
+      v0232_die "symlink escapes its build directory: $link -> $target (allowed roots: ${*:-none})"
+  done < <(find "$directory" -type l -print0)
+}
+
 v0232_build_lock() {
   local state=$1
   exec 9>"$state/build.lock"

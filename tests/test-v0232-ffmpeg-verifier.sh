@@ -54,11 +54,19 @@ import struct
 import sys
 
 root = Path(sys.argv[1])
-for name, elf_class, machine, elf_type in (("i686", 1, 3, 2), ("x64", 2, 62, 2), ("dso", 1, 3, 3)):
+for name, elf_class, machine, elf_type in (("i686", 1, 3, 2), ("x64", 2, 62, 2), ("dso", 1, 3, 3), ("pie", 1, 3, 3)):
     header = bytearray(52 if elf_class == 1 else 64)
     header[:16] = b"\x7fELF" + bytes([elf_class, 1, 1, 0]) + bytes(8)
     if elf_class == 1:
-        struct.pack_into("<HHIIIIIHHHHHH", header, 16, elf_type, machine, 1, 0, 0, 0, 0, 52, 32, 0, 40, 0, 0)
+        interpreter = b"/lib/ld-linux.so.2\0" if name == "pie" else b""
+        entry = 0x8048000 if name == "pie" else 0
+        phoff = 52 if name == "pie" else 0
+        phnum = 1 if name == "pie" else 0
+        struct.pack_into("<HHIIIIIHHHHHH", header, 16, elf_type, machine, 1, entry, phoff, 0, 0, 52, 32, phnum, 40, 0, 0)
+        if name == "pie":
+            address = 0x8048000 + phoff + 32
+            header.extend(struct.pack("<IIIIIIII", 3, phoff + 32, address, address, len(interpreter), len(interpreter), 4, 1))
+            header.extend(interpreter)
     else:
         struct.pack_into("<HHIQQQIHHHHHH", header, 16, elf_type, machine, 1, 0, 0, 0, 0, 64, 56, 0, 64, 0, 0)
     path = root / name
@@ -75,6 +83,12 @@ grep -Fxq 'native_i686_execution=NOT_RUN' "$TMP/static-report/ffmpeg-i686-verifi
 grep -Fxq 'source_commit_claimed=e47273f4d9227152dcbf543cebaf9e2430ddbcc4' \
   "$TMP/static-report/ffmpeg-i686-verification.txt"
 grep -Fxq 'ffmpeg_elf=ELF32 little-endian Intel 80386' "$TMP/static-report/ffmpeg-i686-verification.txt"
+
+mkdir "$TMP/pie-report"
+FFMPEG_SOURCE_COMMIT=e47273f4d9227152dcbf543cebaf9e2430ddbcc4 \
+  "$ROOT/scripts/verify-v0232-ffmpeg-i686.sh" --static-only \
+  "$TMP/pie" "$TMP/pie" "$TMP/pie-report"
+grep -Fxq 'ffmpeg_elf=ELF32 little-endian Intel 80386' "$TMP/pie-report/ffmpeg-i686-verification.txt"
 
 mkdir "$TMP/wrong-elf-report"
 set +e

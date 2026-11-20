@@ -1,0 +1,31 @@
+name: v0.23.2 FFmpeg i686 build and smoke
+
+on:
+  push:
+    branches:
+      - codex/v0232-ffmpeg-ci
+
+permissions: {}
+
+jobs:
+  ffmpeg-i686-build:
+    if: github.repository == 'agustinbracamonte/hermes-i686-support'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Fetch the exact public commit
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          source_root="$RUNNER_TEMP/hermes-i686-source"
+          archive="$RUNNER_TEMP/hermes-i686-source.tar.gz"
+          mkdir -p "$source_root"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://github.com/agustinbracamonte/hermes-i686-support/archive/$GITHUB_SHA.tar.gz" \
+            --output "$archive"
+          tar -xzf "$archive" --strip-components=1 -C "$source_root"
+          bash "$source_root/tests/test-v0232-ffmpeg-build.sh"
+          bash "$source_root/tests/test-v0232-ffmpeg-verifier.sh"
+          bash "$source_root/tests/test-v0232-ffmpeg-ci.sh"
+          bash "$source_root/scripts/ci-v0232-ffmpeg-i686.sh" \
+            "$source_root" "$RUNNER_TEMP/hermes-ffmpeg-i686-build"

@@ -82,8 +82,29 @@ trap cleanup EXIT
 
 FFMPEG_ID=$(v0232_elf_identity "$FFMPEG_BIN") || v0232_die 'FFmpeg must be ELF32 little-endian EM_386'
 FFPROBE_ID=$(v0232_elf_identity "$FFPROBE_BIN") || v0232_die 'FFprobe must be ELF32 little-endian EM_386'
+assert_executable_elf_image() {
+  local binary=$1 elf_type
+  elf_type=$(readelf -h "$binary" | awk '/Type:/ { print $2; exit }')
+  case "$elf_type" in
+    EXEC) return 0 ;;
+    DYN)
+      # Older binutils labels PIE as "Shared object file". Require its
+      # interpreter segment and a nonzero entry point to distinguish it from a DSO.
+      readelf -h "$binary" | awk '
+        /Entry point address:/ {
+          address=$4
+          sub(/^0x0*/, "", address)
+          if (address ~ /^[1-9a-fA-F][0-9a-fA-F]*$/) valid=1
+        }
+        END { exit !valid }
+      ' || return 1
+      readelf -l "$binary" 2>/dev/null | grep -Eq '^[[:space:]]*INTERP([[:space:]]|$)'
+      ;;
+    *) return 1 ;;
+  esac
+}
 for binary in "$FFMPEG_BIN" "$FFPROBE_BIN"; do
-  readelf -h "$binary" | grep -Eq 'Type:[[:space:]]+(EXEC \(Executable file\)|DYN \(Position-Independent Executable file\))' || \
+  assert_executable_elf_image "$binary" || \
     v0232_die "$binary is not an executable ELF image"
 done
 FFMPEG_SHA=$(v0232_sha256 "$FFMPEG_BIN")
