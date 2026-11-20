@@ -149,7 +149,7 @@ wheels = [
         fake_python = self.root / "fake-non-i686-python"
         fake_python.write_text(
             f"#!{sys.executable}\n"
-            "print('{\"bits\":64,\"platform\":\"linux-x86_64\",\"version\":\"3.12.14\"}')\n",
+            "print('{\"bits\":64,\"platform\":\"linux-x86_64\",\"sys_platform\":\"linux\",\"version\":\"3.12.14\"}')\n",
             encoding="utf-8",
         )
         fake_python.chmod(0o755)
@@ -157,6 +157,31 @@ wheels = [
         result = self.run_tool(python=str(fake_python), use_tags_file=False)
 
         self.assertEqual(result.returncode, 2)
+        self.assertIn("must be Linux i686", result.stderr)
+
+    def test_refuses_cygwin_i686_as_a_linux_tag_source_before_pip_probe(self):
+        self.write_lock(b"fixture wheel contents")
+        fake_python = self.root / "fake-cygwin-i686-python"
+        pip_probe_marker = self.root / "pip-debug-was-called"
+        fake_python.write_text(
+            f"#!{sys.executable}\n"
+            "import json, pathlib, sys\n"
+            "if sys.argv[1:2] == ['-c']:\n"
+            "    print(json.dumps({'bits': 32, 'platform': 'cygwin-3.5.3-i686', "
+            "'sys_platform': 'cygwin', 'version': '3.12.14'}))\n"
+            "elif sys.argv[1:3] == ['-m', 'pip']:\n"
+            f"    pathlib.Path({str(pip_probe_marker)!r}).write_text('called')\n"
+            "    print('cp314-cp314-linux_i686')\n"
+            "else:\n"
+            "    raise SystemExit(3)\n",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+
+        result = self.run_tool(python=str(fake_python), use_tags_file=False)
+
+        self.assertFalse(pip_probe_marker.exists())
+        self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("must be Linux i686", result.stderr)
 
     def test_rejects_universal_export_markers_instead_of_counting_them_as_i686(self):

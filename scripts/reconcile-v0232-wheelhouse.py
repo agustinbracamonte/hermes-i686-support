@@ -99,17 +99,23 @@ def interpreter_tags(executable: str) -> tuple[set[str], dict[str, object]]:
             "-c",
             "import json,struct,sys,sysconfig; "
             "print(json.dumps({'bits':struct.calcsize('P')*8,"
-            "'platform':sysconfig.get_platform(),'version':sys.version.split()[0]}))",
+            "'platform':sysconfig.get_platform(),'sys_platform':sys.platform,"
+            "'version':sys.version.split()[0]}))",
         ],
         check=True,
         capture_output=True,
         text=True,
     )
     identity = json.loads(probe.stdout.strip().splitlines()[-1])
-    if identity.get("bits") != 32 or not str(identity.get("platform", "")).lower().endswith("i686"):
+    if (
+        identity.get("sys_platform") != "linux"
+        or identity.get("bits") != 32
+        or not str(identity.get("platform", "")).lower().endswith("i686")
+    ):
         raise ValueError(
             "the supplied interpreter must be Linux i686 (32-bit pointer and "
-            f"sysconfig platform ending in i686; saw {identity})"
+            "Linux sys.platform and sysconfig platform ending in i686; "
+            f"saw {identity}"
         )
     debug = subprocess.run(
         [executable, "-m", "pip", "debug", "--verbose"],
