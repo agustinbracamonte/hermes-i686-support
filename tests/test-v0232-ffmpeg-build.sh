@@ -59,4 +59,28 @@ if HERMES_I686_BUILD_ROOT="$link_root" "$BUILD_SCRIPT" --prepare-only >"$TMP/sym
 fi
 grep -Fq 'symlink escapes its build directory' "$TMP/symlink.log"
 
+# FFmpeg's out-of-tree configure links BUILD/src back to its pinned SOURCE.
+# Permit that one explicitly named source root, while still rejecting any
+# other target outside the build tree.
+helper_root="$TMP/symlink-policy"
+helper_source="$helper_root/source"
+helper_build="$helper_root/build"
+helper_outside="$TMP/untrusted"
+mkdir -p "$helper_source" "$helper_build" "$helper_outside"
+ln -s "$helper_source" "$helper_build/src"
+(
+  source "$ROOT/scripts/v0232-i686-build-common.sh"
+  v0232_assert_symlink_tree "$helper_build" "$helper_source"
+)
+rm "$helper_build/src"
+ln -s "$helper_outside" "$helper_build/untrusted"
+if (
+  source "$ROOT/scripts/v0232-i686-build-common.sh"
+  v0232_assert_symlink_tree "$helper_build" "$helper_source"
+) >"$TMP/symlink-allowlist.log" 2>&1; then
+  printf 'FFmpeg symlink policy unexpectedly accepted a target outside BUILD and SOURCE\n' >&2
+  exit 1
+fi
+grep -Fq 'symlink escapes its build directory' "$TMP/symlink-allowlist.log"
+
 printf 'v0.23.2 FFmpeg build recipe guards: PASS\n'

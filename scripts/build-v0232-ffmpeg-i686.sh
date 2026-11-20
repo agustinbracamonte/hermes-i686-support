@@ -126,18 +126,6 @@ safe_directory() {
   esac
 }
 
-assert_safe_symlink_tree() {
-  local directory=$1 base link target
-  base=$(realpath -e -- "$directory") || v0232_die "cannot resolve build directory: $directory"
-  while IFS= read -r -d '' link; do
-    target=$(realpath -m -- "$link") || v0232_die "cannot resolve symlink: $link"
-    case "$target/" in
-      "$base/"*) ;;
-      *) v0232_die "symlink escapes its build directory: $link -> $target" ;;
-    esac
-  done < <(find "$directory" -type l -print0)
-}
-
 for directory in state src build prefix results; do
   safe_directory "$ROOT/$directory"
 done
@@ -155,10 +143,10 @@ safe_directory "$BUILD"
 safe_directory "$PREFIX"
 safe_directory "$RESULTS"
 safe_directory "$RESULTS/static-verification"
-assert_safe_symlink_tree "$STATE"
-assert_safe_symlink_tree "$BUILD"
-assert_safe_symlink_tree "$PREFIX"
-assert_safe_symlink_tree "$RESULTS"
+v0232_assert_symlink_tree "$STATE"
+v0232_assert_symlink_tree "$BUILD" "$SOURCE"
+v0232_assert_symlink_tree "$PREFIX"
+v0232_assert_symlink_tree "$RESULTS"
 v0232_build_lock "$ROOT"
 
 local_configure_args=()
@@ -209,9 +197,9 @@ ensure_source() {
 SOURCE_FINGERPRINT=$(v0232_fingerprint "$TAG" "$TAG_OBJECT" "$SOURCE_COMMIT" "$SOURCE_TREE" "$SCRIPT_FINGERPRINT")
 [[ ! -L "$SOURCE" ]] || v0232_die "refusing symlinked source directory: $SOURCE"
 safe_directory "$SOURCE"
-assert_safe_symlink_tree "$SOURCE"
+v0232_assert_symlink_tree "$SOURCE"
 ensure_source
-assert_safe_symlink_tree "$SOURCE"
+v0232_assert_symlink_tree "$SOURCE"
 v0232_checkpoint "$STATE" source "$SOURCE_FINGERPRINT" "$SOURCE/.git" true
 if [[ "$MODE" == prepare ]]; then
   v0232_log "verified FFmpeg $VERSION source: tag=$TAG tag_object=$TAG_OBJECT commit=$SOURCE_COMMIT tree=$SOURCE_TREE"
@@ -237,21 +225,21 @@ configure_build() {
   env -u CFLAGS -u CPPFLAGS -u LDFLAGS -u MAKEFLAGS -u CONFIG_SITE \
     LC_ALL=C TZ=UTC SOURCE_DATE_EPOCH=0 CC="$CC_BIN" CFLAGS='-O2 -g0 -march=i686' \
     "$SOURCE/configure" "${local_configure_args[@]}"
-  assert_safe_symlink_tree "$BUILD"
+  v0232_assert_symlink_tree "$BUILD" "$SOURCE"
 }
 
 compile_build() {
   cd "$BUILD"
   env -u CFLAGS -u CPPFLAGS -u LDFLAGS -u CONFIG_SITE LC_ALL=C TZ=UTC \
     SOURCE_DATE_EPOCH=0 MAKEFLAGS= make -j1
-  assert_safe_symlink_tree "$BUILD"
+  v0232_assert_symlink_tree "$BUILD" "$SOURCE"
 }
 
 install_build() {
   cd "$BUILD"
   env -u CFLAGS -u CPPFLAGS -u LDFLAGS -u CONFIG_SITE LC_ALL=C TZ=UTC \
     SOURCE_DATE_EPOCH=0 MAKEFLAGS= make -j1 install
-  assert_safe_symlink_tree "$PREFIX"
+  v0232_assert_symlink_tree "$PREFIX"
 }
 
 run_smoke_checks() {
