@@ -51,5 +51,8 @@ grep -Fq 'QEMU' "$ROOT/scripts/verify-v0232-ffmpeg-i686.sh"
 grep -Fq 'verify-v0232-ffmpeg-i686.sh --runtime' "$CI_SCRIPT"
 grep -Fq 'sudo rm -rf -- "$BUILD_ROOT"' "$CI_SCRIPT"
 grep -Fq 'No artifact upload, release, cache, or package publication is configured.' "$CI_SCRIPT"
+grep -Fq 'GITHUB_STEP_SUMMARY is required to retain text-only build evidence' "$CI_SCRIPT"
+grep -Fq 'cat -- "$SUMMARY_PATH"' "$CI_SCRIPT"
+grep -Fq 'BEGIN FFmpeg 9.0.1 i686 verification summary' "$CI_SCRIPT"
 
 printf 'v0.23.2 FFmpeg hosted i686 CI guards: PASS\n'

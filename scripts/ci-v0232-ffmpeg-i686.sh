@@ -60,6 +60,7 @@ readonly BUILD_AREA="$WORK/build"
 readonly LOG="$BUILD_ROOT/ffmpeg-build.log"
 readonly RESULT_ROOT="$BUILD_AREA/ffmpeg-build-root/results/ffmpeg-9.0.1"
 readonly SUMMARY_PATH=$(printenv GITHUB_STEP_SUMMARY 2>/dev/null || true)
+[[ -n "$SUMMARY_PATH" ]] || die 'GITHUB_STEP_SUMMARY is required to retain text-only build evidence'
 
 cleanup() {
   local status=$?
@@ -191,3 +192,6 @@ if [[ -n "$SUMMARY_PATH" ]]; then
 fi
 
 printf 'FFmpeg hosted i686 build/runtime verification: PASS; ephemeral outputs will now be deleted.\n'
+printf '\n--- BEGIN FFmpeg 9.0.1 i686 verification summary ---\n'
+cat -- "$SUMMARY_PATH"
+printf '\n--- END FFmpeg 9.0.1 i686 verification summary ---\n'
