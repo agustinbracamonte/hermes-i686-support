@@ -143,11 +143,18 @@ wheels = [
         self.assertIn("wheelhouse entry is not a regular file", result.stderr)
         self.assertFalse(self.report.exists())
 
-    def test_refuses_a_non_i686_interpreter_as_tag_source(self):
+    def test_refuses_non_i686_interpreter_independent_of_host_arch(self):
         body = b"fixture wheel contents"
         self.write_lock(body)
+        fake_python = self.root / "fake-non-i686-python"
+        fake_python.write_text(
+            f"#!{sys.executable}\n"
+            "print('{\"bits\":64,\"platform\":\"linux-x86_64\",\"version\":\"3.12.14\"}')\n",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
 
-        result = self.run_tool(python=sys.executable, use_tags_file=False)
+        result = self.run_tool(python=str(fake_python), use_tags_file=False)
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("must be Linux i686", result.stderr)
