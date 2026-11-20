@@ -154,6 +154,10 @@ def local_wheels(wheelhouse: Path) -> list[dict[str, object]]:
         parsed = parse_wheel_filename(path.name)
         if not parsed:
             continue
+        if path.is_symlink():
+            raise ValueError(f"wheelhouse wheel is a symlink: {path.name}")
+        if not path.is_file():
+            raise ValueError(f"wheelhouse entry is not a regular file: {path.name}")
         name, version, tags = parsed
         found.append(
             {
