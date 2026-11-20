@@ -119,6 +119,20 @@ wheels = [
         statuses = {item["name"]: item["status"] for item in report["packages"]}
         self.assertEqual(statuses["cffi"], "hash-mismatch")
 
+    def test_refuses_symlinked_wheel_even_when_target_hash_matches_lock(self):
+        body = b"synthetic wheel bytes outside the wheelhouse"
+        filename = self.write_lock(body)
+        outside = self.root / "outside" / filename
+        outside.parent.mkdir()
+        outside.write_bytes(body)
+        (self.wheelhouse / filename).symlink_to(outside)
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("wheelhouse wheel is a symlink", result.stderr)
+        self.assertFalse(self.report.exists())
+
     def test_refuses_a_non_i686_interpreter_as_tag_source(self):
         body = b"fixture wheel contents"
         self.write_lock(body)
