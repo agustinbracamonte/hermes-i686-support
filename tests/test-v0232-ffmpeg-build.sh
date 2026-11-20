@@ -14,6 +14,11 @@ help=$("$BUILD_SCRIPT" --help)
 grep -Fq 'readonly TAG_OBJECT=501bb49457b9dfb25d6a208832e0a6e6cd53108d' "$BUILD_SCRIPT"
 grep -Fq 'readonly SOURCE_COMMIT=bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa' "$BUILD_SCRIPT"
 grep -Fq 'readonly SOURCE_TREE=68fad6870d0f112fcf4e385d798bf268b2b938b0' "$BUILD_SCRIPT"
+grep -Fq 'ARCHIVE_DIGEST="$STATE/package-artifact.sha256"' "$BUILD_SCRIPT"
+if grep -Fq 'ARCHIVE_DIGEST="$STATE/package.sha256"' "$BUILD_SCRIPT"; then
+  printf 'archive digest must not collide with the package checkpoint marker\n' >&2
+  exit 1
+fi
 grep -Fq 'make -j1' "$BUILD_SCRIPT"
 grep -Fq -- '--enable-libx264 --enable-libopus --enable-libmp3lame' "$BUILD_SCRIPT"
 grep -Fq -- '--enable-libxcb --enable-libxcb-shm --enable-libxcb-shape --enable-libxcb-xfixes' "$BUILD_SCRIPT"
@@ -83,5 +88,29 @@ if (
   exit 1
 fi
 grep -Fq 'symlink escapes its build directory' "$TMP/symlink-allowlist.log"
+
+# The artifact digest must live separately from v0232_checkpoint's
+# "$STATE/package.sha256" fingerprint marker. Reproduce the package step with
+# a tiny fixture and verify the artifact digest survives both creation and
+# checkpoint resume.
+source "$ROOT/scripts/v0232-i686-build-common.sh"
+package_state="$TMP/package-state"
+package_prefix="$TMP/package-prefix"
+package_archive="$TMP/hermes-ffmpeg-i686-fixture.tar.xz"
+package_digest="$package_state/package-artifact.sha256"
+mkdir -p "$package_state" "$package_prefix"
+printf 'synthetic fixture\n' >"$package_prefix/payload.txt"
+package_fixture() {
+  tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+    --format=posix -cJf "$package_archive" -C "$package_prefix" .
+  v0232_sha256 "$package_archive" >"$package_digest.tmp"
+  mv -f -- "$package_digest.tmp" "$package_digest"
+}
+v0232_checkpoint "$package_state" package 'fixture-fingerprint' "$package_archive" package_fixture
+expected_package_sha=$(v0232_sha256 "$package_archive")
+[[ "$(<"$package_digest")" == "$expected_package_sha" ]]
+[[ "$(<"$package_state/package.sha256")" == 'fixture-fingerprint' ]]
+v0232_checkpoint "$package_state" package 'fixture-fingerprint' "$package_archive" package_fixture
+[[ "$(<"$package_digest")" == "$expected_package_sha" ]]
 
 printf 'v0.23.2 FFmpeg build recipe guards: PASS\n'
