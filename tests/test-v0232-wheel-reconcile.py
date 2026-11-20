@@ -133,6 +133,16 @@ wheels = [
         self.assertIn("wheelhouse wheel is a symlink", result.stderr)
         self.assertFalse(self.report.exists())
 
+    def test_refuses_directory_named_as_wheel_before_reading_it(self):
+        filename = self.write_lock(b"synthetic wheel bytes")
+        (self.wheelhouse / filename).mkdir()
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("wheelhouse entry is not a regular file", result.stderr)
+        self.assertFalse(self.report.exists())
+
     def test_refuses_a_non_i686_interpreter_as_tag_source(self):
         body = b"fixture wheel contents"
         self.write_lock(body)
