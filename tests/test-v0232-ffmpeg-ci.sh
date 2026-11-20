@@ -36,6 +36,11 @@ if grep -Eiq 'upload-artifact|create-release|gh release|secrets\.|cache@|larger 
 fi
 
 grep -Fq 'snapshot.debian.org/archive/debian/$DEBIAN_SNAPSHOT' "$CI_SCRIPT"
+grep -Fq 'results/ffmpeg-9.0.1/ci-packages.txt' "$CI_SCRIPT"
+if grep -Fq 'results/ci-packages.txt' "$CI_SCRIPT"; then
+  printf 'CI dependency manifest must use the same versioned result root as the builder\n' >&2
+  exit 1
+fi
 grep -Fq 'sudo mount -o remount,bind,ro "$ROOTFS/work/source"' "$CI_SCRIPT"
 if grep -Fq 'sudo mount --remount' "$CI_SCRIPT"; then
   printf 'hosted chroot bind remount must use mount -o syntax\n' >&2

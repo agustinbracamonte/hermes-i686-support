@@ -129,12 +129,12 @@ apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=3 --yes --no-ins
   libx264-dev libopus-dev libmp3lame-dev \
   libxcb1-dev libxcb-shm0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
   time xvfb
-mkdir -p /work/build/ffmpeg-build-root/results
+mkdir -p /work/build/ffmpeg-build-root/results/ffmpeg-9.0.1
 dpkg-query -W -f='${binary:Package}=${Version}\n' \
   build-essential ca-certificates git nasm pkg-config util-linux xz-utils \
   libx264-dev libopus-dev libmp3lame-dev \
   libxcb1-dev libxcb-shm0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-  time xvfb > /work/build/ffmpeg-build-root/results/ci-packages.txt
+  time xvfb > /work/build/ffmpeg-build-root/results/ffmpeg-9.0.1/ci-packages.txt
 cd /work/source
 export HERMES_I686_BUILD_ROOT=/work/build/ffmpeg-build-root JOBS=1 CC=gcc
 bash scripts/build-v0232-ffmpeg-i686.sh --preflight-only
