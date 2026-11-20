@@ -96,12 +96,49 @@ wheels = [
             (self.tags, "tags file"),
         ):
             with self.subTest(input=label):
+                self.write_lock(b"fixture wheel contents")
+                self.requirements.write_text(
+                    "cffi==2.1.1\npsutil==7.2.2\nnot-in-lock==1.0\n",
+                    encoding="utf-8",
+                )
+                self.tags.write_text(
+                    "cp314-cp314-manylinux_2_17_i686\ncp314-cp314-linux_i686\npy3-none-any\n",
+                    encoding="utf-8",
+                )
                 before = input_path.read_bytes()
                 result = self.run_tool(output=input_path)
 
                 self.assertEqual(input_path.read_bytes(), before)
                 self.assertEqual(result.returncode, 2, result.stderr)
                 self.assertIn(f"--output must not replace the {label}", result.stderr)
+
+    def test_refuses_output_that_would_overwrite_the_target_interpreter(self):
+        self.write_lock(b"fixture wheel contents")
+        fake_python = self.root / "fake-i686-python"
+        fake_python.write_text(
+            f"#!{sys.executable}\n"
+            "import json, sys\n"
+            "if sys.argv[1:2] == ['-c']:\n"
+            "    print(json.dumps({'bits': 32, 'platform': 'linux-i686', "
+            "'sys_platform': 'linux', 'version': '3.12.14'}))\n"
+            "elif sys.argv[1:3] == ['-m', 'pip']:\n"
+            "    print('cp314-cp314-linux_i686')\n"
+            "else:\n"
+            "    raise SystemExit(3)\n",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+        before = fake_python.read_bytes()
+
+        result = self.run_tool(
+            python=str(fake_python),
+            use_tags_file=False,
+            output=fake_python,
+        )
+
+        self.assertEqual(fake_python.read_bytes(), before)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--output must not replace the target interpreter", result.stderr)
 
     def test_refuses_output_inside_wheelhouse(self):
         self.write_lock(b"fixture wheel contents")
