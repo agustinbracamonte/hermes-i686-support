@@ -142,6 +142,14 @@ def validate_output_path(
     if output is None:
         return
 
+    if output.is_symlink():
+        raise ValueError("--output must not be a symlink")
+    if output.exists():
+        if not output.is_file():
+            raise ValueError("--output must be a regular file")
+        if output.stat().st_nlink > 1:
+            raise ValueError("--output must not be a hard link")
+
     resolved_output = output.resolve()
     file_inputs = [
         ("lock", lock_path),
@@ -299,7 +307,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        help="write the JSON result outside the lock, tag inputs, interpreter, and wheelhouse",
+        help="write JSON to a regular non-symlink file outside the inputs and wheelhouse",
     )
     args = parser.parse_args()
 

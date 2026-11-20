@@ -163,7 +163,35 @@ wheels = [
 
         self.assertEqual(wheel.read_bytes(), before)
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("--output must not alias a file in the supplied wheelhouse", result.stderr)
+        self.assertIn("--output must not be a hard link", result.stderr)
+
+    def test_refuses_output_hardlink_to_external_file(self):
+        self.write_lock(b"fixture wheel contents")
+        protected = self.root / "protected.txt"
+        protected.write_bytes(b"keep this synthetic file unchanged")
+        output = self.root / "report.json"
+        os.link(protected, output)
+        before = protected.read_bytes()
+
+        result = self.run_tool(output=output)
+
+        self.assertEqual(protected.read_bytes(), before)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--output must not be a hard link", result.stderr)
+
+    def test_refuses_output_symlink_to_unrelated_file(self):
+        self.write_lock(b"fixture wheel contents")
+        protected = self.root / "protected.txt"
+        protected.write_bytes(b"keep this synthetic file unchanged")
+        output = self.root / "report.json"
+        output.symlink_to(protected)
+        before = protected.read_bytes()
+
+        result = self.run_tool(output=output)
+
+        self.assertEqual(protected.read_bytes(), before)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--output must not be a symlink", result.stderr)
 
     def test_reconciles_hash_and_tag_and_reports_missing_target_wheel(self):
         body = b"fixture wheel contents"
