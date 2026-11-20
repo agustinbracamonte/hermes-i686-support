@@ -2,8 +2,9 @@
 """Offline audit of a resolved Python plan against its uv lock and wheelhouse.
 
 This tool never downloads, builds, renames, or installs wheels and never edits
-the supplied lock. Run it beside the existing wheelhouse on the target
-interpreter; the default tag source is that interpreter's pip debug output.
+the supplied lock or wheelhouse. Run it beside the existing wheelhouse on the
+target interpreter; the default tag source is that interpreter's pip debug
+output.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import hashlib
 import itertools
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -127,6 +129,47 @@ def interpreter_tags(executable: str) -> tuple[set[str], dict[str, object]]:
     if not tags:
         raise ValueError("pip debug output contains no compatible tags")
     return tags, identity
+
+
+def validate_output_path(
+    output: Path | None,
+    lock_path: Path,
+    requirements_path: Path,
+    wheelhouse: Path,
+    tags_file: Path | None,
+    python: str,
+) -> None:
+    if output is None:
+        return
+
+    resolved_output = output.resolve()
+    file_inputs = [
+        ("lock", lock_path),
+        ("requirements", requirements_path),
+    ]
+    if tags_file is not None:
+        file_inputs.append(("tags file", tags_file))
+    python_executable = shutil.which(python) or python
+    file_inputs.append(("target interpreter", Path(python_executable)))
+
+    for label, input_path in file_inputs:
+        resolved_input = input_path.resolve()
+        same_file = output.exists() and input_path.exists() and output.samefile(input_path)
+        if resolved_output == resolved_input or same_file:
+            raise ValueError(f"--output must not replace the {label}")
+
+    resolved_wheelhouse = wheelhouse.resolve()
+    try:
+        resolved_output.relative_to(resolved_wheelhouse)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("--output must be outside the supplied wheelhouse")
+
+    if output.exists():
+        for entry in wheelhouse.rglob("*"):
+            if entry.is_file() and not entry.is_symlink() and output.samefile(entry):
+                raise ValueError("--output must not alias a file in the supplied wheelhouse")
 
 
 def lock_wheels(lock_path: Path) -> tuple[dict[tuple[str, str], list[dict[str, str]]], dict[str, object]]:
@@ -253,13 +296,25 @@ def main() -> int:
         type=Path,
         help="captured compatible-tag list for offline auditing; intended for tests or a saved target report",
     )
-    parser.add_argument("--output", type=Path, help="write the JSON result here; the lock is never edited")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="write the JSON result outside the lock, tag inputs, interpreter, and wheelhouse",
+    )
     args = parser.parse_args()
 
     if not args.lock.is_file() or not args.requirements.is_file() or not args.wheelhouse.is_dir():
         parser.error("--lock, --requirements, and --wheelhouse must point to existing inputs")
 
     try:
+        validate_output_path(
+            args.output,
+            args.lock,
+            args.requirements,
+            args.wheelhouse,
+            args.tags_file,
+            args.python,
+        )
         if args.tags_file:
             tags_raw = args.tags_file.read_bytes()
             target_tags = tags_from_text(tags_raw.decode("utf-8"))
