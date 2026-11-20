@@ -58,6 +58,7 @@ if HERMES_I686_BUILD_ROOT="$link_root" "$BUILD_SCRIPT" --prepare-only >"$TMP/sym
   exit 1
 fi
 grep -Fq 'symlink escapes its build directory' "$TMP/symlink.log"
+grep -Eq '^v0232_assert_symlink_tree \"\$BUILD\"$' "$BUILD_SCRIPT"
 
 # FFmpeg's out-of-tree configure links BUILD/src back to its pinned SOURCE.
 # Permit that one explicitly named source root, while still rejecting any
