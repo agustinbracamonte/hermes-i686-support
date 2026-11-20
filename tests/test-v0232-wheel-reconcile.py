@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -62,7 +63,13 @@ wheels = [
         )
         return cffi_name
 
-    def run_tool(self, *, python: str | None = None, use_tags_file: bool = True):
+    def run_tool(
+        self,
+        *,
+        python: str | None = None,
+        use_tags_file: bool = True,
+        output: Path | None = None,
+    ):
         command = [
             sys.executable,
             str(TOOL),
@@ -73,13 +80,118 @@ wheels = [
             "--wheelhouse",
             str(self.wheelhouse),
             "--output",
-            str(self.report),
+            str(output or self.report),
         ]
         if use_tags_file:
             command.extend(["--tags-file", str(self.tags)])
         if python:
             command.extend(["--python", python])
         return subprocess.run(command, text=True, capture_output=True, check=False)
+
+    def test_refuses_output_that_would_overwrite_file_inputs(self):
+        self.write_lock(b"fixture wheel contents")
+        for input_path, label in (
+            (self.lock, "lock"),
+            (self.requirements, "requirements"),
+            (self.tags, "tags file"),
+        ):
+            with self.subTest(input=label):
+                self.write_lock(b"fixture wheel contents")
+                self.requirements.write_text(
+                    "cffi==2.1.1\npsutil==7.2.2\nnot-in-lock==1.0\n",
+                    encoding="utf-8",
+                )
+                self.tags.write_text(
+                    "cp314-cp314-manylinux_2_17_i686\ncp314-cp314-linux_i686\npy3-none-any\n",
+                    encoding="utf-8",
+                )
+                before = input_path.read_bytes()
+                result = self.run_tool(output=input_path)
+
+                self.assertEqual(input_path.read_bytes(), before)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn(f"--output must not replace the {label}", result.stderr)
+
+    def test_refuses_output_that_would_overwrite_the_target_interpreter(self):
+        self.write_lock(b"fixture wheel contents")
+        fake_python = self.root / "fake-i686-python"
+        fake_python.write_text(
+            f"#!{sys.executable}\n"
+            "import json, sys\n"
+            "if sys.argv[1:2] == ['-c']:\n"
+            "    print(json.dumps({'bits': 32, 'platform': 'linux-i686', "
+            "'sys_platform': 'linux', 'version': '3.12.14'}))\n"
+            "elif sys.argv[1:3] == ['-m', 'pip']:\n"
+            "    print('cp314-cp314-linux_i686')\n"
+            "else:\n"
+            "    raise SystemExit(3)\n",
+            encoding="utf-8",
+        )
+        fake_python.chmod(0o755)
+        before = fake_python.read_bytes()
+
+        result = self.run_tool(
+            python=str(fake_python),
+            use_tags_file=False,
+            output=fake_python,
+        )
+
+        self.assertEqual(fake_python.read_bytes(), before)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--output must not replace the target interpreter", result.stderr)
+
+    def test_refuses_output_inside_wheelhouse(self):
+        self.write_lock(b"fixture wheel contents")
+        output = self.wheelhouse / "report.json"
+
+        result = self.run_tool(output=output)
+
+        self.assertFalse(output.exists())
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--output must be outside the supplied wheelhouse", result.stderr)
+
+    def test_refuses_output_hardlink_to_wheelhouse_file(self):
+        body = b"fixture wheel contents"
+        filename = self.write_lock(body)
+        wheel = self.wheelhouse / filename
+        wheel.write_bytes(body)
+        output = self.root / "report.json"
+        os.link(wheel, output)
+        before = wheel.read_bytes()
+
+        result = self.run_tool(output=output)
+
+        self.assertEqual(wheel.read_bytes(), before)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--output must not be a hard link", result.stderr)
+
+    def test_refuses_output_hardlink_to_external_file(self):
+        self.write_lock(b"fixture wheel contents")
+        protected = self.root / "protected.txt"
+        protected.write_bytes(b"keep this synthetic file unchanged")
+        output = self.root / "report.json"
+        os.link(protected, output)
+        before = protected.read_bytes()
+
+        result = self.run_tool(output=output)
+
+        self.assertEqual(protected.read_bytes(), before)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--output must not be a hard link", result.stderr)
+
+    def test_refuses_output_symlink_to_unrelated_file(self):
+        self.write_lock(b"fixture wheel contents")
+        protected = self.root / "protected.txt"
+        protected.write_bytes(b"keep this synthetic file unchanged")
+        output = self.root / "report.json"
+        output.symlink_to(protected)
+        before = protected.read_bytes()
+
+        result = self.run_tool(output=output)
+
+        self.assertEqual(protected.read_bytes(), before)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--output must not be a symlink", result.stderr)
 
     def test_reconciles_hash_and_tag_and_reports_missing_target_wheel(self):
         body = b"fixture wheel contents"
