@@ -42,12 +42,17 @@ class WheelReconcileTests(unittest.TestCase):
     def write_lock(self, cffi_body: bytes, *, psutil_platform: str = "manylinux_2_28_x86_64"):
         cffi_name = "cffi-2.1.1-cp314-cp314-manylinux_2_17_i686.whl"
         cffi_hash = hashlib.sha256(cffi_body).hexdigest()
+        cffi_sdist_hash = hashlib.sha256(b"synthetic cffi source bytes").hexdigest()
+        psutil_sdist_hash = hashlib.sha256(b"synthetic psutil source bytes").hexdigest()
+        cffi_sdist_size = len(b"synthetic cffi source bytes")
+        psutil_sdist_size = len(b"synthetic psutil source bytes")
         self.lock.write_text(
             f'''version = 1
 
 [[package]]
 name = "cffi"
 version = "2.1.1"
+sdist = {{ url = "https://files.pythonhosted.org/packages/cffi/cffi-2.1.1.tar.gz", hash = "sha256:{cffi_sdist_hash}", size = {cffi_sdist_size} }}
 wheels = [
   {{ url = "https://files.pythonhosted.org/packages/cffi/{cffi_name}", hash = "sha256:{cffi_hash}" }},
 ]
@@ -55,6 +60,7 @@ wheels = [
 [[package]]
 name = "psutil"
 version = "7.2.2"
+sdist = {{ url = "https://files.pythonhosted.org/packages/psutil/psutil-7.2.2.tar.gz?fixture=redacted", hash = "sha256:{psutil_sdist_hash}", size = {psutil_sdist_size} }}
 wheels = [
   {{ url = "https://files.pythonhosted.org/packages/psutil/psutil-7.2.2-cp314-cp314-{psutil_platform}.whl", hash = "sha256:{'a' * 64}" }},
 ]
@@ -218,6 +224,41 @@ wheels = [
         )
         self.assertEqual(self.lock.read_bytes(), before)
         self.assertNotIn(str(self.root), self.report.read_text(encoding="utf-8"))
+
+    def test_reports_locked_sdist_metadata_for_missing_compatible_wheel(self):
+        self.write_lock(b"fixture wheel contents")
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        packages = {item["name"]: item for item in report["packages"]}
+        self.assertEqual(packages["psutil"]["status"], "no-compatible-wheel")
+        self.assertEqual(
+            packages["psutil"]["source_distributions"],
+            [{
+                "filename": "psutil-7.2.2.tar.gz",
+                "sha256": hashlib.sha256(b"synthetic psutil source bytes").hexdigest(),
+                "size_bytes": len(b"synthetic psutil source bytes"),
+            }],
+        )
+        self.assertEqual(report["locked_sdist_count"], 2)
+        self.assertNotIn("files.pythonhosted.org", self.report.read_text(encoding="utf-8"))
+        self.assertNotIn("fixture=redacted", self.report.read_text(encoding="utf-8"))
+
+    def test_rejects_locked_sdist_without_a_sha256_digest(self):
+        self.write_lock(b"fixture wheel contents")
+        invalid_hash = "sha256:" + hashlib.sha256(b"synthetic psutil source bytes").hexdigest()
+        self.lock.write_text(
+            self.lock.read_text(encoding="utf-8").replace(invalid_hash, "sha256:not-a-sha256"),
+            encoding="utf-8",
+        )
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("must have a filename and SHA-256", result.stderr)
+        self.assertFalse(self.report.exists())
 
     def test_rejects_local_wheel_that_does_not_match_locked_hash(self):
         body = b"expected lock bytes"

@@ -29,6 +29,7 @@ WHEEL = re.compile(
     r"-(?P<python>[^-]+)-(?P<abi>[^-]+)-(?P<platform>[^-]+)\.whl$",
     re.IGNORECASE,
 )
+SDIST_SHA256 = re.compile(r"^sha256:([0-9a-f]{64})$", re.IGNORECASE)
 
 
 def canonical_name(value: str) -> str:
@@ -180,16 +181,24 @@ def validate_output_path(
                 raise ValueError("--output must not alias a file in the supplied wheelhouse")
 
 
-def lock_wheels(lock_path: Path) -> tuple[dict[tuple[str, str], list[dict[str, str]]], dict[str, object]]:
+def lock_artifacts(
+    lock_path: Path,
+) -> tuple[
+    dict[tuple[str, str], list[dict[str, str]]],
+    dict[tuple[str, str], list[dict[str, object]]],
+    dict[str, object],
+]:
     raw = lock_path.read_bytes()
     lock = tomllib.loads(raw.decode("utf-8"))
     packages: dict[tuple[str, str], list[dict[str, str]]] = {}
+    source_distributions: dict[tuple[str, str], list[dict[str, object]]] = {}
     for package in lock.get("package", []):
         name = canonical_name(str(package.get("name", "")))
         version = str(package.get("version", ""))
         if not name or not version:
             continue
-        entries = packages.setdefault((name, version), [])
+        key = (name, version)
+        entries = packages.setdefault(key, [])
         for wheel in package.get("wheels", []):
             url = str(wheel.get("url", ""))
             filename = Path(unquote(urlparse(url).path)).name
@@ -198,11 +207,35 @@ def lock_wheels(lock_path: Path) -> tuple[dict[tuple[str, str], list[dict[str, s
                 parsed = parse_wheel_filename(filename)
                 if parsed and parsed[:2] == (name, version):
                     entries.append({"filename": filename, "sha256": digest.removeprefix("sha256:").lower(), "url": url})
+
+        sdist = package.get("sdist")
+        if sdist is not None:
+            if not isinstance(sdist, dict):
+                raise ValueError(f"locked source distribution for {name}=={version} is not a table")
+            sdist_url = str(sdist.get("url", ""))
+            sdist_filename = Path(unquote(urlparse(sdist_url).path)).name
+            sdist_hash = str(sdist.get("hash", ""))
+            hash_match = SDIST_SHA256.fullmatch(sdist_hash)
+            if not sdist_filename or not hash_match:
+                raise ValueError(
+                    f"locked source distribution for {name}=={version} must have a filename and SHA-256"
+                )
+            source_record: dict[str, object] = {
+                "filename": sdist_filename,
+                "sha256": hash_match.group(1).lower(),
+            }
+            size = sdist.get("size")
+            if isinstance(size, int) and not isinstance(size, bool) and size >= 0:
+                source_record["size_bytes"] = size
+            source_entries = source_distributions.setdefault(key, [])
+            if source_record not in source_entries:
+                source_entries.append(source_record)
     metadata = {
         "lock_sha256": hashlib.sha256(raw).hexdigest(),
         "locked_wheel_count": sum(map(len, packages.values())),
+        "locked_sdist_count": sum(map(len, source_distributions.values())),
     }
-    return packages, metadata
+    return packages, source_distributions, metadata
 
 
 def local_wheels(wheelhouse: Path) -> list[dict[str, object]]:
@@ -232,6 +265,7 @@ def local_wheels(wheelhouse: Path) -> list[dict[str, object]]:
 def reconcile(
     plan: dict[str, str],
     lock: dict[tuple[str, str], list[dict[str, str]]],
+    source_distributions: dict[tuple[str, str], list[dict[str, object]]],
     wheels: list[dict[str, object]],
     target_tags: set[str],
 ) -> list[dict[str, object]]:
@@ -239,48 +273,48 @@ def reconcile(
     for name, version in sorted(plan.items()):
         key = (name, version)
         if key not in lock:
-            results.append({"name": name, "version": version, "status": "package-not-in-lock"})
-            continue
-        locked = lock[key]
-        locked_compatible = [
-            wheel
-            for wheel in locked
-            if (parsed := parse_wheel_filename(wheel["filename"]))
-            and parsed[2] & target_tags
-        ]
-        local = [wheel for wheel in wheels if wheel["name"] == name and wheel["version"] == version]
-        compatible = [wheel for wheel in local if wheel["tags"] & target_tags]
-        matched = [
-            wheel
-            for wheel in compatible
-            for expected in locked
-            if wheel["filename"] == expected["filename"]
-            and wheel["sha256"] == expected["sha256"]
-        ]
-        if matched:
-            chosen = matched[0]
-            results.append(
-                {
+            result: dict[str, object] = {"name": name, "version": version, "status": "package-not-in-lock"}
+        else:
+            locked = lock[key]
+            locked_compatible = [
+                wheel
+                for wheel in locked
+                if (parsed := parse_wheel_filename(wheel["filename"]))
+                and parsed[2] & target_tags
+            ]
+            local = [wheel for wheel in wheels if wheel["name"] == name and wheel["version"] == version]
+            compatible = [wheel for wheel in local if wheel["tags"] & target_tags]
+            matched = [
+                wheel
+                for wheel in compatible
+                for expected in locked
+                if wheel["filename"] == expected["filename"]
+                and wheel["sha256"] == expected["sha256"]
+            ]
+            if matched:
+                chosen = matched[0]
+                result = {
                     "name": name,
                     "version": version,
                     "status": "verified",
                     "filename": chosen["filename"],
                     "sha256": chosen["sha256"],
                 }
-            )
-            continue
-        if compatible:
-            locked_names = {expected["filename"] for expected in locked}
-            status = (
-                "hash-mismatch"
-                if any(wheel["filename"] in locked_names for wheel in compatible)
-                else "wheel-not-in-lock"
-            )
-        elif not locked_compatible:
-            status = "no-compatible-wheel"
-        else:
-            status = "compatible-wheel-not-present"
-        results.append({"name": name, "version": version, "status": status})
+            elif compatible:
+                locked_names = {expected["filename"] for expected in locked}
+                status = (
+                    "hash-mismatch"
+                    if any(wheel["filename"] in locked_names for wheel in compatible)
+                    else "wheel-not-in-lock"
+                )
+                result = {"name": name, "version": version, "status": status}
+            elif not locked_compatible:
+                result = {"name": name, "version": version, "status": "no-compatible-wheel"}
+            else:
+                result = {"name": name, "version": version, "status": "compatible-wheel-not-present"}
+        if source_distributions.get(key):
+            result["source_distributions"] = source_distributions[key]
+        results.append(result)
     return results
 
 
@@ -335,14 +369,14 @@ def main() -> int:
             raise ValueError("target compatible-tag set is empty")
 
         plan = parse_requirements(args.requirements)
-        lock, lock_metadata = lock_wheels(args.lock)
-        results = reconcile(plan, lock, local_wheels(args.wheelhouse), target_tags)
+        lock, source_distributions, lock_metadata = lock_artifacts(args.lock)
+        results = reconcile(plan, lock, source_distributions, local_wheels(args.wheelhouse), target_tags)
         counts: dict[str, int] = {}
         for result in results:
             status = str(result["status"])
             counts[status] = counts.get(status, 0) + 1
         report = {
-            "schema": "hermes-v0232-wheel-reconciliation-v1",
+            "schema": "hermes-v0232-wheel-reconciliation-v2",
             "target": identity,
             "target_tag_count": len(target_tags),
             "target_tags_sha256": tags_sha,
