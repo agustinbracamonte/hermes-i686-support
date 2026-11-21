@@ -10,16 +10,19 @@ output.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import itertools
 import json
 import os
 import re
+import secrets
 import shutil
+import stat
 import subprocess
 import sys
-import tempfile
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -32,6 +35,13 @@ WHEEL = re.compile(
     re.IGNORECASE,
 )
 SDIST_SHA256 = re.compile(r"^sha256:([0-9a-f]{64})$", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class OutputPathGuard:
+    parent_identity: tuple[int, int] | None
+    wheelhouse_identity: tuple[int, int]
+    protected_file_identities: frozenset[tuple[int, int]]
 
 
 def canonical_name(value: str) -> str:
@@ -141,9 +151,9 @@ def validate_output_path(
     wheelhouse: Path,
     tags_file: Path | None,
     python: str,
-) -> None:
+) -> OutputPathGuard | None:
     if output is None:
-        return
+        return None
 
     if output.is_symlink():
         raise ValueError("--output must not be a symlink")
@@ -182,26 +192,177 @@ def validate_output_path(
             if entry.is_file() and not entry.is_symlink() and output.samefile(entry):
                 raise ValueError("--output must not alias a file in the supplied wheelhouse")
 
+    wheelhouse_stat = wheelhouse.stat()
+    protected_file_identities: set[tuple[int, int]] = set()
+    for _, input_path in file_inputs:
+        try:
+            input_stat = input_path.stat()
+        except OSError:
+            continue
+        protected_file_identities.add((input_stat.st_dev, input_stat.st_ino))
 
-def write_report_atomically(output: Path, encoded: str) -> None:
-    """Replace a report without following a destination swapped after validation."""
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{output.name}.", suffix=".tmp", dir=output.parent
-    )
-    temporary = Path(temporary_name)
     try:
+        parent_stat = output.parent.stat()
+    except FileNotFoundError:
+        parent_identity = None
+    else:
+        if not stat.S_ISDIR(parent_stat.st_mode):
+            raise ValueError("--output parent must be a directory")
+        parent_identity = (parent_stat.st_dev, parent_stat.st_ino)
+    return OutputPathGuard(
+        parent_identity=parent_identity,
+        wheelhouse_identity=(wheelhouse_stat.st_dev, wheelhouse_stat.st_ino),
+        protected_file_identities=frozenset(protected_file_identities),
+    )
+
+
+def open_directory_chain(path: Path, *, create: bool = False) -> int:
+    """Open every output-parent component without following symlinks."""
+    if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+        raise OSError("safe --output parent traversal is unavailable on this platform")
+    if os.open not in os.supports_dir_fd:
+        raise OSError("safe --output parent traversal requires dir_fd support")
+
+    absolute = Path(os.path.abspath(path))
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(absolute.anchor or os.sep, flags)
+
+    def open_child(component: str, parent_fd: int) -> int:
+        try:
+            return os.open(component, flags, dir_fd=parent_fd)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+                raise ValueError(
+                    "--output parent components must be real directories; symlinks are not followed"
+                ) from exc
+            raise
+
+    try:
+        for component in absolute.parts[1:]:
+            try:
+                child = open_child(component, descriptor)
+            except FileNotFoundError:
+                if not create:
+                    raise
+                try:
+                    os.mkdir(component, mode=0o777, dir_fd=descriptor)
+                except FileExistsError:
+                    pass
+                child = open_child(component, descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def require_output_parent_stable(
+    output: Path,
+    parent_fd: int,
+    guard: OutputPathGuard,
+) -> None:
+    pinned = os.fstat(parent_fd)
+    identity = (pinned.st_dev, pinned.st_ino)
+    if guard.parent_identity is not None and identity != guard.parent_identity:
+        raise ValueError("--output parent changed after validation")
+    if output_parent_is_within_wheelhouse(parent_fd, guard.wheelhouse_identity):
+        raise ValueError("--output parent must remain outside the supplied wheelhouse")
+    named_fd = open_directory_chain(output.parent)
+    try:
+        named = os.fstat(named_fd)
+        if (named.st_dev, named.st_ino) != identity:
+            raise ValueError("--output parent changed during report writing")
+    finally:
+        os.close(named_fd)
+
+
+def output_parent_is_within_wheelhouse(parent_fd: int, wheelhouse_identity: tuple[int, int]) -> bool:
+    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    current_fd = os.dup(parent_fd)
+    try:
+        while True:
+            current = os.fstat(current_fd)
+            if (current.st_dev, current.st_ino) == wheelhouse_identity:
+                return True
+            ancestor_fd = os.open("..", flags, dir_fd=current_fd)
+            ancestor = os.fstat(ancestor_fd)
+            if (ancestor.st_dev, ancestor.st_ino) == (current.st_dev, current.st_ino):
+                os.close(ancestor_fd)
+                return False
+            os.close(current_fd)
+            current_fd = ancestor_fd
+    finally:
+        os.close(current_fd)
+
+
+def require_output_name_not_protected(
+    name: str,
+    parent_fd: int,
+    protected_identities: frozenset[tuple[int, int]],
+) -> None:
+    try:
+        existing = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if (existing.st_dev, existing.st_ino) in protected_identities:
+        raise ValueError("--output destination now aliases a protected input")
+
+
+def write_report_atomically(
+    output: Path,
+    encoded: str,
+    guard: OutputPathGuard,
+) -> None:
+    """Write through a pinned output directory and reject parent-path swaps."""
+    parent_fd = open_directory_chain(output.parent, create=True)
+    temporary_name: str | None = None
+    try:
+        require_output_parent_stable(output, parent_fd, guard)
+        require_output_name_not_protected(output.name, parent_fd, guard.protected_file_identities)
+        flags = (
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        for _ in range(10):
+            candidate = f".{output.name}.{secrets.token_hex(8)}.tmp"
+            try:
+                descriptor = os.open(candidate, flags, 0o600, dir_fd=parent_fd)
+            except FileExistsError:
+                continue
+            temporary_name = candidate
+            break
+        else:
+            raise FileExistsError("could not allocate a unique --output temporary file")
+
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
-        # Same-directory replacement is atomic and replaces a raced symlink or
-        # hard-link entry itself; it never truncates the object that entry names.
-        os.replace(temporary, output)
-    finally:
+        require_output_parent_stable(output, parent_fd, guard)
+        require_output_name_not_protected(output.name, parent_fd, guard.protected_file_identities)
+        os.replace(
+            temporary_name,
+            output.name,
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
+        temporary_name = None
         try:
-            temporary.unlink()
-        except FileNotFoundError:
-            pass
+            require_output_parent_stable(output, parent_fd, guard)
+        except (OSError, ValueError):
+            try:
+                os.unlink(output.name, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
+            raise
+    finally:
+        if temporary_name is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=parent_fd)
+            except FileNotFoundError:
+                pass
+        os.close(parent_fd)
 
 
 def lock_artifacts(
@@ -364,7 +525,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        help="write JSON to a regular non-symlink file outside the inputs and wheelhouse",
+        help="write JSON atomically outside inputs/wheelhouse; parent components cannot be symlinks",
     )
     args = parser.parse_args()
 
@@ -372,7 +533,7 @@ def main() -> int:
         parser.error("--lock, --requirements, and --wheelhouse must point to existing inputs")
 
     try:
-        validate_output_path(
+        output_path_guard = validate_output_path(
             args.output,
             args.lock,
             args.requirements,
@@ -411,8 +572,9 @@ def main() -> int:
         }
         encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
         if args.output:
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            write_report_atomically(args.output, encoded)
+            if output_path_guard is None:
+                raise ValueError("--output validation did not return a path guard")
+            write_report_atomically(args.output, encoded, output_path_guard)
         else:
             sys.stdout.write(encoded)
         return 0 if all(item["status"] == "verified" for item in results) else 1
