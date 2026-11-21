@@ -118,3 +118,16 @@ The host for this implementation is Linux x86_64. The test environment was built
 - The missing-pin regression now uses an explicit lock fixture. The patchset also covers ELF validation at the shared PM admission/install/doctor boundary so subclass-specific `verify()` implementations cannot bypass it.
 - Native i686 validation on the operator's staging host remains pending. This public workstream has no access to the B10 or private Púlsar code; the i686 uv binary was not executed here.
 - PR #2 remains open and unmerged. No deployment, production access, private customization, wheel upload, or channel session was used.
+
+## Wheelhouse report parent-race guard — HOST / synthetic, 2026-11-21
+
+Public PR #28 follows PR #27's atomic report replacement guard. A new deterministic baseline test swaps the report's parent directory for a symlink after path validation; PR #27 writes the synthetic report through that symlink into the outside target. The follow-up pins each parent component with `O_DIRECTORY | O_NOFOLLOW` and descriptor-relative operations, checks the directory identity before and after replacement, and cleans up through the pinned descriptor when the path changes. Newly created parents retain the existing umask-based mode behavior.
+
+Verification on Python 3.12.14 / Linux x86_64:
+
+- `python3 tests/test-v0232-wheel-reconcile.py -q` — 21 passed, including the baseline-reproduced symlink-parent write, replacement with another real directory, parent move at atomic replace, and creation of missing parent directories.
+- `python3 -m py_compile scripts/reconcile-v0232-wheelhouse.py tests/test-v0232-wheel-reconcile.py` — exit 0.
+- `git diff --check` — exit 0.
+- SHA-256: reconciler `8ab8b39864261343db67a337652cee1a6b56ad7f045b3e2b5b65497c1f511012`; tests `f046af0734cbc29646c0e4b69559b07344afba9e1eaf36cdcd38d30384b37b3f`.
+
+This is a local host filesystem test only. It does not establish native i686 or ARM64 behavior, validate Púlsar's actual lock/wheelhouse, or provide Hermes installation evidence. No reported wheel was fetched or rebuilt and no CI run was started.
