@@ -170,6 +170,21 @@ wheels = [
         self.assertEqual(result, 2)
         self.assertEqual(list(outside.iterdir()), [])
 
+    def test_atomic_report_write_refuses_initial_parent_symlink(self):
+        self.write_lock(b"fixture wheel contents")
+        outside = self.root / "outside"
+        outside.mkdir()
+        report_parent = self.root / "reports"
+        report_parent.symlink_to(outside, target_is_directory=True)
+        output = report_parent / "summary.json"
+
+        result = self.run_tool(output=output)
+
+        self.assertFalse((outside / output.name).exists())
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("symlinks are not followed", result.stderr)
+
     def test_atomic_report_write_refuses_replaced_real_parent(self):
         self.write_lock(b"fixture wheel contents")
         report_parent = self.root / "reports"
