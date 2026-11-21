@@ -100,22 +100,26 @@ wheels = [
         spec = importlib.util.spec_from_file_location("wheel_reconciler_fixture", TOOL)
         module = importlib.util.module_from_spec(spec)
         self.assertIsNotNone(spec.loader)
-        spec.loader.exec_module(module)
-        original_validate = module.validate_output_path
+        sys.modules[spec.name] = module
+        try:
+            spec.loader.exec_module(module)
+            original_validate = module.validate_output_path
 
-        def validate_then_swap(*args, **kwargs):
-            expected_parent_identity = original_validate(*args, **kwargs)
-            swap_output()
-            return expected_parent_identity
+            def validate_then_swap(*args, **kwargs):
+                guard = original_validate(*args, **kwargs)
+                swap_output()
+                return guard
 
-        module.validate_output_path = validate_then_swap
-        argv = [
-            str(TOOL), "--lock", str(self.lock), "--requirements", str(self.requirements),
-            "--wheelhouse", str(self.wheelhouse), "--tags-file", str(self.tags),
-            "--output", str(output or self.report),
-        ]
-        with mock.patch.object(sys, "argv", argv):
-            return module.main()
+            module.validate_output_path = validate_then_swap
+            argv = [
+                str(TOOL), "--lock", str(self.lock), "--requirements", str(self.requirements),
+                "--wheelhouse", str(self.wheelhouse), "--tags-file", str(self.tags),
+                "--output", str(output or self.report),
+            ]
+            with mock.patch.object(sys, "argv", argv):
+                return module.main()
+        finally:
+            sys.modules.pop(spec.name, None)
 
     def test_atomic_report_write_does_not_follow_raced_symlink(self):
         self.write_lock(b"fixture wheel contents")
@@ -229,6 +233,22 @@ wheels = [
         self.assertEqual(result.returncode, 1)  # The fixture intentionally has missing wheels.
         self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["schema"],
                          "hermes-v0232-wheel-reconciliation-v2")
+
+    def test_atomic_report_write_refuses_moved_wheelhouse_as_missing_parent(self):
+        self.write_lock(b"fixture wheel contents")
+        sentinel = self.wheelhouse / "synthetic-sentinel.whl"
+        sentinel.write_bytes(b"preserve synthetic wheelhouse sentinel")
+        output_parent = self.root / "late-parent"
+        output = output_parent / "summary.json"
+
+        result = self.run_main_with_output_swap(
+            lambda: self.wheelhouse.rename(output_parent),
+            output=output,
+        )
+
+        self.assertEqual(result, 2)
+        self.assertFalse(output.exists())
+        self.assertEqual((output_parent / sentinel.name).read_bytes(), b"preserve synthetic wheelhouse sentinel")
 
     def test_refuses_output_that_would_overwrite_file_inputs(self):
         self.write_lock(b"fixture wheel contents")

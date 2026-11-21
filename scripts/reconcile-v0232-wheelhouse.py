@@ -22,6 +22,7 @@ import stat
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -34,6 +35,13 @@ WHEEL = re.compile(
     re.IGNORECASE,
 )
 SDIST_SHA256 = re.compile(r"^sha256:([0-9a-f]{64})$", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class OutputPathGuard:
+    parent_identity: tuple[int, int] | None
+    wheelhouse_identity: tuple[int, int]
+    protected_file_identities: frozenset[tuple[int, int]]
 
 
 def canonical_name(value: str) -> str:
@@ -143,7 +151,7 @@ def validate_output_path(
     wheelhouse: Path,
     tags_file: Path | None,
     python: str,
-) -> tuple[int, int] | None:
+) -> OutputPathGuard | None:
     if output is None:
         return None
 
@@ -184,13 +192,28 @@ def validate_output_path(
             if entry.is_file() and not entry.is_symlink() and output.samefile(entry):
                 raise ValueError("--output must not alias a file in the supplied wheelhouse")
 
+    wheelhouse_stat = wheelhouse.stat()
+    protected_file_identities: set[tuple[int, int]] = set()
+    for _, input_path in file_inputs:
+        try:
+            input_stat = input_path.stat()
+        except OSError:
+            continue
+        protected_file_identities.add((input_stat.st_dev, input_stat.st_ino))
+
     try:
         parent_stat = output.parent.stat()
     except FileNotFoundError:
-        return None
-    if not stat.S_ISDIR(parent_stat.st_mode):
-        raise ValueError("--output parent must be a directory")
-    return parent_stat.st_dev, parent_stat.st_ino
+        parent_identity = None
+    else:
+        if not stat.S_ISDIR(parent_stat.st_mode):
+            raise ValueError("--output parent must be a directory")
+        parent_identity = (parent_stat.st_dev, parent_stat.st_ino)
+    return OutputPathGuard(
+        parent_identity=parent_identity,
+        wheelhouse_identity=(wheelhouse_stat.st_dev, wheelhouse_stat.st_ino),
+        protected_file_identities=frozenset(protected_file_identities),
+    )
 
 
 def open_directory_chain(path: Path, *, create: bool = False) -> int:
@@ -237,12 +260,14 @@ def open_directory_chain(path: Path, *, create: bool = False) -> int:
 def require_output_parent_stable(
     output: Path,
     parent_fd: int,
-    expected_identity: tuple[int, int] | None,
+    guard: OutputPathGuard,
 ) -> None:
     pinned = os.fstat(parent_fd)
     identity = (pinned.st_dev, pinned.st_ino)
-    if expected_identity is not None and identity != expected_identity:
+    if guard.parent_identity is not None and identity != guard.parent_identity:
         raise ValueError("--output parent changed after validation")
+    if output_parent_is_within_wheelhouse(parent_fd, guard.wheelhouse_identity):
+        raise ValueError("--output parent must remain outside the supplied wheelhouse")
     named_fd = open_directory_chain(output.parent)
     try:
         named = os.fstat(named_fd)
@@ -252,16 +277,49 @@ def require_output_parent_stable(
         os.close(named_fd)
 
 
+def output_parent_is_within_wheelhouse(parent_fd: int, wheelhouse_identity: tuple[int, int]) -> bool:
+    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    current_fd = os.dup(parent_fd)
+    try:
+        while True:
+            current = os.fstat(current_fd)
+            if (current.st_dev, current.st_ino) == wheelhouse_identity:
+                return True
+            ancestor_fd = os.open("..", flags, dir_fd=current_fd)
+            ancestor = os.fstat(ancestor_fd)
+            if (ancestor.st_dev, ancestor.st_ino) == (current.st_dev, current.st_ino):
+                os.close(ancestor_fd)
+                return False
+            os.close(current_fd)
+            current_fd = ancestor_fd
+    finally:
+        os.close(current_fd)
+
+
+def require_output_name_not_protected(
+    name: str,
+    parent_fd: int,
+    protected_identities: frozenset[tuple[int, int]],
+) -> None:
+    try:
+        existing = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if (existing.st_dev, existing.st_ino) in protected_identities:
+        raise ValueError("--output destination now aliases a protected input")
+
+
 def write_report_atomically(
     output: Path,
     encoded: str,
-    expected_parent_identity: tuple[int, int] | None,
+    guard: OutputPathGuard,
 ) -> None:
     """Write through a pinned output directory and reject parent-path swaps."""
     parent_fd = open_directory_chain(output.parent, create=True)
     temporary_name: str | None = None
     try:
-        require_output_parent_stable(output, parent_fd, expected_parent_identity)
+        require_output_parent_stable(output, parent_fd, guard)
+        require_output_name_not_protected(output.name, parent_fd, guard.protected_file_identities)
         flags = (
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
             | getattr(os, "O_CLOEXEC", 0)
@@ -281,7 +339,8 @@ def write_report_atomically(
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
-        require_output_parent_stable(output, parent_fd, expected_parent_identity)
+        require_output_parent_stable(output, parent_fd, guard)
+        require_output_name_not_protected(output.name, parent_fd, guard.protected_file_identities)
         os.replace(
             temporary_name,
             output.name,
@@ -290,7 +349,7 @@ def write_report_atomically(
         )
         temporary_name = None
         try:
-            require_output_parent_stable(output, parent_fd, expected_parent_identity)
+            require_output_parent_stable(output, parent_fd, guard)
         except (OSError, ValueError):
             try:
                 os.unlink(output.name, dir_fd=parent_fd)
@@ -474,7 +533,7 @@ def main() -> int:
         parser.error("--lock, --requirements, and --wheelhouse must point to existing inputs")
 
     try:
-        expected_output_parent = validate_output_path(
+        output_path_guard = validate_output_path(
             args.output,
             args.lock,
             args.requirements,
@@ -513,7 +572,9 @@ def main() -> int:
         }
         encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
         if args.output:
-            write_report_atomically(args.output, encoded, expected_output_parent)
+            if output_path_guard is None:
+                raise ValueError("--output validation did not return a path guard")
+            write_report_atomically(args.output, encoded, output_path_guard)
         else:
             sys.stdout.write(encoded)
         return 0 if all(item["status"] == "verified" for item in results) else 1
