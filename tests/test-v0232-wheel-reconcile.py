@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -11,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +95,54 @@ wheels = [
         if python:
             command.extend(["--python", python])
         return subprocess.run(command, text=True, capture_output=True, check=False)
+
+    def run_main_with_output_swap(self, swap_output):
+        spec = importlib.util.spec_from_file_location("wheel_reconciler_fixture", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        spec.loader.exec_module(module)
+        original_validate = module.validate_output_path
+
+        def validate_then_swap(*args, **kwargs):
+            original_validate(*args, **kwargs)
+            swap_output()
+
+        module.validate_output_path = validate_then_swap
+        argv = [
+            str(TOOL), "--lock", str(self.lock), "--requirements", str(self.requirements),
+            "--wheelhouse", str(self.wheelhouse), "--tags-file", str(self.tags),
+            "--output", str(self.report),
+        ]
+        with mock.patch.object(sys, "argv", argv):
+            return module.main()
+
+    def test_atomic_report_write_does_not_follow_raced_symlink(self):
+        self.write_lock(b"fixture wheel contents")
+        protected = self.root / "protected.json"
+        protected.write_text("preserve this synthetic sentinel", encoding="utf-8")
+
+        result = self.run_main_with_output_swap(lambda: self.report.symlink_to(protected))
+
+        self.assertEqual(result, 1)  # The fixture intentionally has missing wheels.
+        self.assertEqual(protected.read_text(encoding="utf-8"), "preserve this synthetic sentinel")
+        self.assertFalse(self.report.is_symlink())
+        self.assertEqual(json.loads(self.report.read_text(encoding="utf-8"))["schema"],
+                         "hermes-v0232-wheel-reconciliation-v2")
+        self.assertEqual(list(self.root.glob(".report.json.*.tmp")), [])
+
+    def test_atomic_report_write_does_not_truncate_raced_hardlink(self):
+        self.write_lock(b"fixture wheel contents")
+        protected = self.root / "protected.json"
+        protected.write_text("preserve this synthetic sentinel", encoding="utf-8")
+
+        result = self.run_main_with_output_swap(lambda: os.link(protected, self.report))
+
+        self.assertEqual(result, 1)  # The fixture intentionally has missing wheels.
+        self.assertEqual(protected.read_text(encoding="utf-8"), "preserve this synthetic sentinel")
+        self.assertFalse(self.report.is_symlink())
+        self.assertEqual(json.loads(self.report.read_text(encoding="utf-8"))["schema"],
+                         "hermes-v0232-wheel-reconciliation-v2")
+        self.assertEqual(list(self.root.glob(".report.json.*.tmp")), [])
 
     def test_refuses_output_that_would_overwrite_file_inputs(self):
         self.write_lock(b"fixture wheel contents")

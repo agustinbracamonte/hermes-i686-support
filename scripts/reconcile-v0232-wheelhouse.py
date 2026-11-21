@@ -13,10 +13,12 @@ import argparse
 import hashlib
 import itertools
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -179,6 +181,27 @@ def validate_output_path(
         for entry in wheelhouse.rglob("*"):
             if entry.is_file() and not entry.is_symlink() and output.samefile(entry):
                 raise ValueError("--output must not alias a file in the supplied wheelhouse")
+
+
+def write_report_atomically(output: Path, encoded: str) -> None:
+    """Replace a report without following a destination swapped after validation."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.", suffix=".tmp", dir=output.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Same-directory replacement is atomic and replaces a raced symlink or
+        # hard-link entry itself; it never truncates the object that entry names.
+        os.replace(temporary, output)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def lock_artifacts(
@@ -389,7 +412,7 @@ def main() -> int:
         encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(encoded, encoding="utf-8")
+            write_report_atomically(args.output, encoded)
         else:
             sys.stdout.write(encoded)
         return 0 if all(item["status"] == "verified" for item in results) else 1

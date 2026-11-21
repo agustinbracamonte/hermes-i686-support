@@ -75,12 +75,14 @@ Keep the exact plan-generation command and resolver version with the private sta
 
 The 101-package plan, 92 reportedly verified wheels, nine reported gaps, and isolated `cffi`/`psutil` sync remain operator-supplied findings. This public work did not inspect or copy those files. Fixture tests cover wheel matching, missing-lock-row, missing-target-wheel, digest-mismatch, locked source-distribution metadata, malformed source hashes, output-path protection, incompatible-host and universal-marker rejection; they are not evidence about Púlsar's wheelhouse.
 
+The optional report is written to a mode-0600 temporary file in the destination directory, flushed, and atomically replaced. This prevents a destination changed to a symlink or hard link after validation from truncating the linked target, and avoids exposing a partial JSON report. Synthetic regression fixtures deliberately insert each link after the initial path checks; they verify that the sentinel target remains unchanged.
+
 ## Checks run in this work session
 
 - CPython build script fetched v3.14.9 and verified the exact tag object, commit and tree. A second run reused the source checkpoint.
 - Node source tarball was downloaded from nodejs.org, matched the official SHASUMS256 entry, and the --prepare-only extraction/resume path passed twice using those verified bytes.
 - tests/test-v0232-runtime-builds.sh — pass: shell syntax, JOBS=2 rejection, bad Node archive hash rejection, ELF32/x64 fixtures, and checkpoint resume/fingerprint rejection.
-- python3 tests/test-v0232-wheel-reconcile.py — pass: 15 synthetic local-fixture cases cover i686 tag/hash matching, missing target wheels, mismatched digests, source-distribution metadata, malformed sdist hashes, output-path aliases, rejection of non-Linux/non-i686 tag sources, and universal marker-bearing plans.
+- python3 tests/test-v0232-wheel-reconcile.py — pass: 17 synthetic local-fixture cases cover i686 tag/hash matching, missing target wheels, mismatched digests, source-distribution metadata, malformed sdist hashes, output-path aliases, rejection of non-Linux/non-i686 tag sources, universal marker-bearing plans, and atomic report replacement under raced symlink/hard-link destinations.
 - Read-only parser check against the unchanged official v0.23.2 `uv.lock` at commit `ae2a81ccc00e9b7c06301523e5bb09608397149c` — 355 package groups, 3,282 locked wheels, and 322 locked source distributions parsed; lock SHA-256 `d0ae8bfd20db7a8ca0e75418df718315c58088b120366227cc62ee8fe25d4274`. No wheel or source archive was fetched.
 - Both runtime scripts' --prepare-only paths passed with nonexistent compiler paths after source verification/extraction; repeated runs reused checkpoints. Their --preflight-only paths rejected the x86_64 ELF64 process before build.
 - scripts/verify-v0232-pnpm-wasm.sh with the actual official npm tarballs — pass on Node v24.22.1, process.arch=x64; it ran pnpm 12.15.0 and completed an offline local-file install.
