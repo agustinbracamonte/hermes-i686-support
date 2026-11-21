@@ -123,13 +123,15 @@ The host for this implementation is Linux x86_64. The test environment was built
 
 Public PR #28 follows PR #27's atomic report replacement guard. A deterministic baseline test swaps the report's parent directory for a symlink after path validation; PR #27 writes the synthetic report through that symlink into the outside target. A second baseline test moves the wheelhouse into a previously missing output-parent path; the unguarded writer places its report inside the wheelhouse.
 
+An additional regression starts with the report parent already symlinked. On PR #27, the baseline followed that symlink and wrote `summary.json` into the outside directory. The PR #28 guard rejects it before writing.
+
 The follow-up pins each path component with `O_DIRECTORY | O_NOFOLLOW`, uses descriptor-relative temporary-file/replace/cleanup operations, checks the validated directory identity before and after replacement, refuses parents inside the captured wheelhouse inode, and refuses destination entries that alias protected inputs. Newly created parent directories retain the existing umask-based mode behavior.
 
 Verification on Python 3.12.14 / Linux x86_64:
 
-- `python3 tests/test-v0232-wheel-reconcile.py -q` — 22 passed, including baseline-reproduced parent-symlink and moved-wheelhouse writes, replacement with another real directory, parent move at atomic replace, and missing-parent creation.
+- `python3 tests/test-v0232-wheel-reconcile.py -q` — 23 passed, including baseline-reproduced initial and raced parent symlinks, moved-wheelhouse write, replacement with another real directory, parent move at atomic replace, and missing-parent creation.
 - `python3 -m py_compile scripts/reconcile-v0232-wheelhouse.py tests/test-v0232-wheel-reconcile.py` — exit 0.
 - `git diff --check` — exit 0.
-- SHA-256: reconciler `b1a7d54ff6cb205e88490f9ed4849a9b664157597dbaede8b8f906dbc4450937`; tests `95bda2e8e809c22c8f7ba083906131d90507b92b1202560e7a60022b9f8d2ced`.
+- SHA-256: reconciler `b1a7d54ff6cb205e88490f9ed4849a9b664157597dbaede8b8f906dbc4450937`; tests `ce62774416118a83d72fe008302d7a47936f25b5a36ca768b5973f4977bc6b33`.
 
 This is a local host filesystem test only. It does not establish native i686 or ARM64 behavior, validate Púlsar's actual lock/wheelhouse, or provide Hermes installation evidence. No reported wheel was fetched or rebuilt and no CI run was started.
