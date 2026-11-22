@@ -135,3 +135,17 @@ Verification on Python 3.12.14 / Linux x86_64:
 - SHA-256: reconciler `b1a7d54ff6cb205e88490f9ed4849a9b664157597dbaede8b8f906dbc4450937`; tests `ce62774416118a83d72fe008302d7a47936f25b5a36ca768b5973f4977bc6b33`.
 
 This is a local host filesystem test only. It does not establish native i686 or ARM64 behavior, validate Púlsar's actual lock/wheelhouse, or provide Hermes installation evidence. No reported wheel was fetched or rebuilt and no CI run was started.
+
+## Wheel reconciler Python 3.14.9 host recheck — 2026-11-22 17:35 UTC
+
+Re-fetched the PR #28 head `fa2a52417d6bfbf38b4da54d4cb863e6ea6d4bbd` reconciler and test files through GitHub into a disposable host directory. Local Git blob IDs match the public head: reconciler `6701a4e6f55212e0dcae25720eb252aa2d5fb45b`; test `83afe0f8e868be91b50128c41331bd28ceb1d090`. SHA-256 values match PR #28's recorded hashes: `b1a7d54ff6cb205e88490f9ed4849a9b664157597dbaede8b8f906dbc4450937` and `ce62774416118a83d72fe008302d7a47936f25b5a36ca768b5973f4977bc6b33`.
+
+Command on CPython 3.14.9 / pytest 9.1.1 / Linux x86_64:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /tmp/hermes-v0232-test-venv/bin/python -m pytest -q -p no:cacheprovider tests/test-v0232-wheel-reconcile.py
+```
+
+Result: exit 0, **23 passed, 3 subtests passed in 1.25s**. The fixtures cover the report directory's symlink/rename/alias races and use synthetic wheelhouse and lock files only. No real wheelhouse, lock, or reported wheel was accessed; nothing was downloaded, installed, rebuilt, or uploaded, and no Actions workflow was started.
+
+This is a Python 3.14.9 host x86_64 filesystem regression. It is not native i686 or ARM64 evidence and does not establish the Hermes package-manager install, dependency closure, or B10 staging.
