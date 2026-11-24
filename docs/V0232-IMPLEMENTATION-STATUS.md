@@ -1,6 +1,6 @@
 # Hermes Agent v0.23.2 i686 implementation status
 
-Updated 2026-11-17. This is the public, generic compatibility workstream. It does not include a Hermes source checkout, private Púlsar code, credentials, sessions, wheels, or binaries.
+Updated 2026-11-24. This is the public, generic compatibility workstream. It contains no Hermes source checkout, private Púlsar code, credentials, sessions, wheelhouse, or retained runtime binaries. Hosted Debian 11 i386 build evidence from Actions run #28 is recorded below.
 
 ## Pinned source
 
@@ -96,12 +96,25 @@ Executed in this work session:
 | pnpm WASM lock/package stage | HOSTED CI | Official npm integrity and SHA-256 verified; PM downloaded from loopback, enforced the pinned i686 digest, staged launchers/module, and rejected invalid manifests/modules in fixtures. x64/ARM64 pnpm URLs and hashes are asserted unchanged. |
 | pnpm WASM CLI and offline install | HOSTED CI, x64 process | Node 24.22.1 x64 ran `@pnpm/wasm@12.15.0` and installed a local-file fixture offline. This is not native i686 evidence. |
 | CPython/Node source preparation | HOSTED CI + STATIC | CPython tag object/commit/tree and Node official source checksum verified; source extraction and checkpoints resume. No compilation performed. |
-| Native Linux i686 Python and Bash | NOT RUN | No native i686 userspace or interpreter is attached to this environment. |
+| Hosted Debian 11 i386 userspace | HOSTED CI | Actions run #28 built CPython 3.14.9 and Node 26.12.1 as ELF32/EM_386 and passed runtime smoke checks. This is hosted userspace evidence, not B10 hardware validation. |
 | Native ARM64 | NOT RUN | ARM64 is covered with ELF fixtures; no ARM64 execution host was attached. |
-| Native CPython/Node i686 builds and pnpm WASM on i686 | NOT RUN | The build shell/compiler are ELF64/x86_64. Build scripts fail closed; Node's x86 target is Experimental upstream. |
-| Full PM install, Python wheels, Node/npm, gateway | NOT RUN | No Node i686 artifact/lock row or complete dependency closure exists here. The 92 reported wheels were not downloaded again and no full install was attempted. |
+| Hosted CPython/Node builds and pnpm WASM on i686 | HOSTED CI | Run #28 passed CPython, Node, six V8 spans, worker_threads, shared WebAssembly memory, ICU es-AR and pnpm WASM offline-install checks in a Debian 11 i386 chroot. No binaries were retained. |
+| B10-native runtimes and full PM install/lock/doctor | NOT RUN | Run #28 was hosted CI, produced no retained binaries, and did not exercise Púlsar's lock or wheelhouse. B10 performance, ARM64, and complete dependency closure remain unverified. The reported 92 wheels were not fetched again. |
 
 The host for this implementation is Linux x86_64. The test environment was built with the checkout's `pm.build_env` using bootstrap CPython 3.12.14 and the managed CPython 3.14.9 test interpreter. A passing x86_64 or fixture test is not native i686 evidence. Use an isolated Debian 11 i386 staging image/device for the remaining runtime gates in `V0232-ACCEPTANCE.md`.
+
+## Hosted Debian 11 i386 runtime results — Actions run #28 (2026-11-19)
+
+Run #28 (workflow `v0.23.2 native i686 runtimes`, job `135329601952`) succeeded on PR #11 head `f09eca83d0e72bfe1415eabc1c1256d22f7b8f91`. Hosted Ubuntu 24.04 used a Debian 11 i386 userspace/chroot without QEMU.
+
+- Clang 19.1.7 i386 package passed the preflight with SHA-256 `d52c7089346ebc4616d3e9e3bbee6eb0848455a9abb777746fdd32812ce981d3`, matching signed APT metadata.
+- CPython 3.14.9 ran as ELF32/EM_386, 32-bit pointers; SHA-256 `8cef39b6947193697c241d839a8a5284592f3027530de94ca13968caeec1f14f`.
+- Node 26.12.1 ran as ELF32/EM_386 with `process.arch=ia32`, npm 11.20.0; Node SHA-256 `fe371ba1480fd0040cdea4e4a3ab2079edd45c9c33efd11d84c898661dcf086f`.
+- Six V8 spans, worker_threads, shared WebAssembly memory, and ICU `es-AR` passed. Node targeted SSE2 and used `--openssl-no-asm`; B10 performance has not been measured.
+- `@pnpm/wasm@12.15.0` ran under Node ia32; SHA-256 `172c9d9a2b8b82b00a67323ffa6d34c32f8706279661329ea460432b95c9da1f`, with npm integrity `sha512-uxV61T7Sn34SAVUkzZf0xYNW0Ocw59OCHYRNdY2pOm4xE3Z+r2ptXOd2XTiWQBOZ8qgyMLs69F4ZHcUakvFR2Q==`. An offline local-file install passed; the package had no native executable.
+- The workflow artifact list was empty; it retained/uploaded no binaries.
+
+This is hosted i386 userspace evidence, not a B10 staging install. It does not close the full PM/lock/dependency, private customization, ARM64, memory/performance, backup/restore, or rollback gates. The reported wheelhouse was not inspected.
 
 ## Next engineering milestones
 
