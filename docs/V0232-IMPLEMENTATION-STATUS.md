@@ -162,3 +162,15 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. /tmp/hermes-v0232-test-venv/bin/python -m
 Result: exit 0, **23 passed, 3 subtests passed in 1.25s**. The fixtures cover the report directory's symlink/rename/alias races and use synthetic wheelhouse and lock files only. No real wheelhouse, lock, or reported wheel was accessed; nothing was downloaded, installed, rebuilt, or uploaded, and no Actions workflow was started.
 
 This is a Python 3.14.9 host x86_64 filesystem regression. It is not native i686 or ARM64 evidence and does not establish the Hermes package-manager install, dependency closure, or B10 staging.
+
+
+## Official Linux/i686 release-asset check — 2026-11-24
+
+At the pinned Hermes v0.23.2 source commit, `pm/lock.json` selects `just` 1.59.0 and `ripgrep` 15.2.0. Read-only GitHub Releases API metadata was checked for those exact upstream tags:
+
+- [casey/just 1.59.0](https://github.com/casey/just/releases/tag/1.59.0): the published Linux assets include AArch64, ARM/ARMv7, LoongArch64, RISC-V and x86_64; the release contains no Linux i686 asset.
+- [BurntSushi/ripgrep 15.2.0](https://github.com/BurntSushi/ripgrep/releases/tag/15.2.0): the published Linux assets include AArch64, ARMv7, s390x and x86_64; its i686 asset is Windows-only, with no Linux i686 asset.
+
+The API metadata is available at [the just release endpoint](https://api.github.com/repos/casey/just/releases/tags/1.59.0) and [the ripgrep release endpoint](https://api.github.com/repos/BurntSushi/ripgrep/releases/tags/15.2.0). This confirms that neither exact upstream release can supply a generic Linux/i686 binary row. No digest was borrowed from another architecture, and no lock row was added. Púlsar's reported local ripgrep i686 pin remains operator-supplied until its sanitized source/build provenance and artifact digest are reviewed; it is not evidence for a public upstream binary.
+
+This was a metadata-only check: no release archive or sidecar was downloaded, no binary was executed, and no test/build or Actions run was started. Next, resolve the remaining PM candidates only when exact upstream assets or reviewed, reproducible i686 source-build manifests are available.
