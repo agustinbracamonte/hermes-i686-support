@@ -1,6 +1,6 @@
 # Hermes v0.23.2 i686 runtime builds
 
-Updated 2026-11-17. This public workstream contains reproducible source-build procedures only. It has no compiled CPython/Node binaries, no wheelhouse, no Púlsar source, and no credentials.
+Updated 2026-11-24. This public workstream contains reproducible source-build procedures and hosted Debian 11 i386 build evidence. It retains no compiled CPython/Node binaries, wheelhouse, Púlsar source, or credentials.
 
 ## Locked source evidence
 
@@ -77,7 +77,7 @@ The 101-package plan, 92 reportedly verified wheels, nine reported gaps, and iso
 
 The optional report is written to a mode-0600 temporary file in the destination directory, flushed, and atomically replaced. This prevents a destination changed to a symlink or hard link after validation from truncating the linked target, and avoids exposing a partial JSON report. Synthetic regression fixtures deliberately insert each link after the initial path checks; they verify that the sentinel target remains unchanged.
 
-## Checks run in this work session
+## Earlier source and host checks (before hosted run #28)
 
 - CPython build script fetched v3.14.9 and verified the exact tag object, commit and tree. A second run reused the source checkpoint.
 - Node source tarball was downloaded from nodejs.org, matched the official SHASUMS256 entry, and the --prepare-only extraction/resume path passed twice using those verified bytes.
@@ -90,12 +90,23 @@ The optional report is written to a mode-0600 temporary file in the destination 
 - scripts/test-v0232-pnpm-wasm-pm-stage.sh — pass against the patched v0.23.2 checkout and the already downloaded WASM tarball. PM downloaded it from loopback, verified the pinned SHA-256, installed the store entry and ran the shared ELF scan; it did not execute Node or pnpm.
 - tests/test-v0232-patchset.sh — pass against a clean checkout of the exact Hermes commit. The ordered patch series applied and 103 focused PM core/install/doctor/store/downloader/pnpm tests passed; one macOS-only case was skipped on Linux.
 
-These checks establish source, hash, PM staging, and host-side WASM behavior. They do not establish a native i686 CPython build, Node build, pnpm WASM execution, or full Hermes PM closure. This environment is x86_64 and its GCC targets x86_64, so neither source build was attempted. The staging-only 92 wheel artifacts reported by Púlsar were not downloaded, rebuilt, or inspected.
+These checks establish source, hash, PM staging, and host-side WASM behavior as of the earlier work session. At that point they did not establish i686 CPython/Node builds or i686 pnpm execution. Hosted run #28, recorded below, later added those userspace build and smoke-test results. Neither the earlier host checks nor run #28 establishes a B10 run or full Hermes PM closure. The staging-only 92 wheel artifacts reported by Púlsar were not downloaded, rebuilt, or inspected.
+
+## Hosted Debian 11 i386 build — Actions run #28
+
+Run [#28](https://github.com/agustinbracamonte/hermes-i686-support/actions/runs/44455559422) completed successfully on PR #11 head `f09eca83d0e72bfe1415eabc1c1256d22f7b8f91`. The workflow used a hosted Ubuntu 24.04 runner with a Debian 11 i386 userspace/chroot and no QEMU. The Clang 19.1.7 i386 package passed preflight; its SHA-256 `d52c7089346ebc4616d3e9e3bbee6eb0848455a9abb777746fdd32812ce981d3` matched signed APT metadata.
+
+- CPython 3.14.9: ELF32, little-endian Intel 80386, 32-bit pointers; SHA-256 `8cef39b6947193697c241d839a8a5284592f3027530de94ca13968caeec1f14f`. Smoke checks included OpenSSL 1.1.1w, SQLite 3.34.1 and ctypes.
+- Node 26.12.1: ELF32/EM_386, `process.arch=ia32`, npm 11.20.0; node SHA-256 `fe371ba1480fd0040cdea4e4a3ab2079edd45c9c33efd11d84c898661dcf086f`. The run passed six V8 span probes, worker_threads, shared WebAssembly memory and full ICU `es-AR`. Node targeted SSE2 and used `--openssl-no-asm`; target performance is not measured.
+- `@pnpm/wasm@12.15.0`: tarball SHA-256 `172c9d9a2b8b82b00a67323ffa6d34c32f8706279661329ea460432b95c9da1f`; npm integrity `sha512-uxV61T7Sn34SAVUkzZf0xYNW0Ocw59OCHYRNdY2pOm4xE3Z+r2ptXOd2XTiWQBOZ8qgyMLs69F4ZHcUakvFR2Q==`. Its 44,951,421-byte WASM module passed an offline local-file install under Node ia32, with no native executable.
+- The Actions artifacts endpoint returned an empty list. No runtime binary was retained or uploaded.
+
+This proves hosted Debian 11 i386 userspace execution, not a physical B10 staging run. It does not verify the real Hermes PM lock/install/doctor, all dependencies, private staging, ARM64, or B10 memory/performance. No reported Púlsar wheel was fetched or rebuilt.
 
 ## Next staging checks
 
-1. Run both preflights in the isolated ELF32/i686 userspace; ensure the compiler is GCC >=13.2 and the CPython source-build prerequisites are present.
-2. Build CPython, then Node, serially; retain each result manifest and the source/system package records.
-3. Run verify-v0232-pnpm-wasm.sh --require-ia32 against the built Node. Capture memory use and check the offline install result.
-4. Have Púlsar validate those outputs in its staging environment and reconcile the Node pin into its real lock. No staging host was accessed by this public task.
-5. Run the offline reconciler in Púlsar staging against its actual resolved plan, lock, and existing wheelhouse. Do not retrieve the reported 92 wheels again; resolve the nine gaps and document local source builds separately.
+1. Validate the required compiler and CPython system dependencies in the approved isolated Debian 11 i386 staging image. No binary artifact from run #28 is available to transfer; run the documented serial recipes in an authorized build environment or use a separately approved, zero-cost private artifact route after recording provenance and independently checking each digest.
+2. Run `verify-v0232-pnpm-wasm.sh --require-ia32` against the Node executable used by staging, then capture memory use and offline install results.
+3. Reconcile the Node pin in the private staging lock and verify full PM install/sync/doctor and dependency closure.
+4. Run the offline reconciler in Púlsar staging against its actual resolved plan, lock, and existing wheelhouse. Do not retrieve the reported 92 wheels again; resolve the nine gaps and document local source builds separately.
+5. Record B10 memory/performance, ARM64, and recovery/rollback evidence independently. No staging host was accessed by this public task.
