@@ -21,6 +21,12 @@ These are **review gates**, not claims of completed testing. Every result must b
 - [ ] Native wheels have validated i686 compatibility and ELF32 extension objects, and isolated Python imports where applicable.
 - [ ] Full isolated PM install/sync/doctor succeeds, with no x64 native libraries and no unexpected global PM update.
 
+### Hosted CI evidence — Actions run #28 (2026-11-19)
+
+Run #28 on PR #11 built and smoke-tested CPython 3.14.9 and Node 26.12.1 in hosted Debian 11 i386 userspace. The executables were ELF32/EM_386; CPython SHA-256 was `8cef39b6947193697c241d839a8a5284592f3027530de94ca13968caeec1f14f`, and Node SHA-256 was `fe371ba1480fd0040cdea4e4a3ab2079edd45c9c33efd11d84c898661dcf086f`. Node reported `process.arch=ia32`; the run passed six V8 span probes, worker_threads, shared WebAssembly memory and ICU `es-AR`. `@pnpm/wasm@12.15.0` passed an offline local-file install under that Node. No binaries were retained as workflow artifacts.
+
+This is hosted CI evidence, not a B10 run. It does not close the native-device, full PM/lock/dependency, ARM64, private integration, staging, performance, backup or rollback gates above. Keep their acceptance boxes unchecked until separately verified.
+
 ## Gate 3 — gateway, sessions, plugins (private integration only)
 - [ ] Semantic compatibility matrix compares old customizations with exact v0.23.2 contracts; don't paste old adapter hunks.
 - [ ] Session ownership is separated by profile; admission ordering and concurrent messages are covered by isolated test fixtures.
