@@ -132,7 +132,7 @@ wheels = [
         self.assertEqual(protected.read_text(encoding="utf-8"), "preserve this synthetic sentinel")
         self.assertFalse(self.report.is_symlink())
         self.assertEqual(json.loads(self.report.read_text(encoding="utf-8"))["schema"],
-                         "hermes-v0232-wheel-reconciliation-v2")
+                         "hermes-v0232-wheel-reconciliation-v3")
         self.assertEqual(list(self.root.glob(".report.json.*.tmp")), [])
 
     def test_atomic_report_write_does_not_truncate_raced_hardlink(self):
@@ -146,7 +146,7 @@ wheels = [
         self.assertEqual(protected.read_text(encoding="utf-8"), "preserve this synthetic sentinel")
         self.assertFalse(self.report.is_symlink())
         self.assertEqual(json.loads(self.report.read_text(encoding="utf-8"))["schema"],
-                         "hermes-v0232-wheel-reconciliation-v2")
+                         "hermes-v0232-wheel-reconciliation-v3")
         self.assertEqual(list(self.root.glob(".report.json.*.tmp")), [])
 
     def test_atomic_report_write_does_not_follow_raced_parent_symlink(self):
@@ -247,7 +247,7 @@ wheels = [
 
         self.assertEqual(result.returncode, 1)  # The fixture intentionally has missing wheels.
         self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["schema"],
-                         "hermes-v0232-wheel-reconciliation-v2")
+                         "hermes-v0232-wheel-reconciliation-v3")
 
     def test_atomic_report_write_refuses_moved_wheelhouse_as_missing_parent(self):
         self.write_lock(b"fixture wheel contents")
@@ -384,6 +384,14 @@ wheels = [
             report["summary"],
             {"plan": 3, "no-compatible-wheel": 1, "package-not-in-lock": 1, "verified": 1},
         )
+        self.assertEqual(
+            report["classification_summary"],
+            {
+                "plan-lock-mismatch": 1,
+                "source-build-candidate": 1,
+                "verified-wheel": 1,
+            },
+        )
         statuses = {item["name"]: item["status"] for item in report["packages"]}
         self.assertEqual(
             statuses,
@@ -405,6 +413,7 @@ wheels = [
         report = json.loads(self.report.read_text(encoding="utf-8"))
         packages = {item["name"]: item for item in report["packages"]}
         self.assertEqual(packages["psutil"]["status"], "no-compatible-wheel")
+        self.assertEqual(packages["psutil"]["classification"], "source-build-candidate")
         self.assertEqual(
             packages["psutil"]["source_distributions"],
             [{
@@ -416,6 +425,34 @@ wheels = [
         self.assertEqual(report["locked_sdist_count"], 2)
         self.assertNotIn("files.pythonhosted.org", self.report.read_text(encoding="utf-8"))
         self.assertNotIn("fixture=redacted", self.report.read_text(encoding="utf-8"))
+
+    def test_missing_wheel_without_locked_sdist_is_unresolved_not_source_candidate(self):
+        self.write_lock(b"fixture wheel contents")
+        lock_text = self.lock.read_text(encoding="utf-8")
+        sdist_line = next(
+            line for line in lock_text.splitlines() if "psutil-7.2.2.tar.gz" in line
+        )
+        self.lock.write_text(lock_text.replace(sdist_line + "\n", ""), encoding="utf-8")
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        psutil = next(item for item in report["packages"] if item["name"] == "psutil")
+        self.assertEqual(psutil["status"], "no-compatible-wheel")
+        self.assertEqual(psutil["classification"], "unresolved-artifact-gap")
+        self.assertEqual(report["classification_summary"]["unresolved-artifact-gap"], 1)
+
+    def test_locked_compatible_wheel_missing_locally_is_not_a_source_build_gap(self):
+        self.write_lock(b"fixture wheel contents", psutil_platform="manylinux_2_17_i686")
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        psutil = next(item for item in report["packages"] if item["name"] == "psutil")
+        self.assertEqual(psutil["status"], "compatible-wheel-not-present")
+        self.assertEqual(psutil["classification"], "locked-wheel-missing-locally")
 
     def test_rejects_locked_sdist_without_a_sha256_digest(self):
         self.write_lock(b"fixture wheel contents")
@@ -442,6 +479,9 @@ wheels = [
         report = json.loads(self.report.read_text(encoding="utf-8"))
         statuses = {item["name"]: item["status"] for item in report["packages"]}
         self.assertEqual(statuses["cffi"], "hash-mismatch")
+        classifications = {item["name"]: item["classification"] for item in report["packages"]}
+        self.assertEqual(classifications["cffi"], "integrity-failure")
+        self.assertNotEqual(classifications["cffi"], "source-build-candidate")
 
     def test_refuses_symlinked_wheel_even_when_target_hash_matches_lock(self):
         body = b"synthetic wheel bytes outside the wheelhouse"
