@@ -498,8 +498,30 @@ def reconcile(
                 result = {"name": name, "version": version, "status": "compatible-wheel-not-present"}
         if source_distributions.get(key):
             result["source_distributions"] = source_distributions[key]
+        result["classification"] = classify_result(
+            str(result["status"]), bool(source_distributions.get(key))
+        )
         results.append(result)
     return results
+
+
+def classify_result(status: str, has_source_distribution: bool) -> str:
+    """Separate artifact inventory outcomes from integrity failures and build gaps."""
+    if status == "verified":
+        return "verified-wheel"
+    if status == "hash-mismatch":
+        return "integrity-failure"
+    if status == "wheel-not-in-lock":
+        return "unlocked-wheel"
+    if status == "package-not-in-lock":
+        return "plan-lock-mismatch"
+    if status == "no-compatible-wheel":
+        if has_source_distribution:
+            return "source-build-candidate"
+        return "unresolved-artifact-gap"
+    if status == "compatible-wheel-not-present":
+        return "locked-wheel-missing-locally"
+    raise ValueError(f"unknown reconciliation status: {status}")
 
 
 def main() -> int:
@@ -556,11 +578,14 @@ def main() -> int:
         lock, source_distributions, lock_metadata = lock_artifacts(args.lock)
         results = reconcile(plan, lock, source_distributions, local_wheels(args.wheelhouse), target_tags)
         counts: dict[str, int] = {}
+        classifications: dict[str, int] = {}
         for result in results:
             status = str(result["status"])
             counts[status] = counts.get(status, 0) + 1
+            classification = str(result["classification"])
+            classifications[classification] = classifications.get(classification, 0) + 1
         report = {
-            "schema": "hermes-v0232-wheel-reconciliation-v2",
+            "schema": "hermes-v0232-wheel-reconciliation-v3",
             "target": identity,
             "target_tag_count": len(target_tags),
             "target_tags_sha256": tags_sha,
@@ -568,6 +593,7 @@ def main() -> int:
             **lock_metadata,
             "wheelhouse_file_count": len(list(args.wheelhouse.rglob("*.whl"))),
             "summary": {"plan": len(results), **counts},
+            "classification_summary": classifications,
             "packages": results,
         }
         encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
