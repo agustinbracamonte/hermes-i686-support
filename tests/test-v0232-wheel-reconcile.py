@@ -132,7 +132,7 @@ wheels = [
         self.assertEqual(protected.read_text(encoding="utf-8"), "preserve this synthetic sentinel")
         self.assertFalse(self.report.is_symlink())
         self.assertEqual(json.loads(self.report.read_text(encoding="utf-8"))["schema"],
-                         "hermes-v0232-wheel-reconciliation-v3")
+                         "hermes-v0232-wheel-reconciliation-v4")
         self.assertEqual(list(self.root.glob(".report.json.*.tmp")), [])
 
     def test_atomic_report_write_does_not_truncate_raced_hardlink(self):
@@ -146,7 +146,7 @@ wheels = [
         self.assertEqual(protected.read_text(encoding="utf-8"), "preserve this synthetic sentinel")
         self.assertFalse(self.report.is_symlink())
         self.assertEqual(json.loads(self.report.read_text(encoding="utf-8"))["schema"],
-                         "hermes-v0232-wheel-reconciliation-v3")
+                         "hermes-v0232-wheel-reconciliation-v4")
         self.assertEqual(list(self.root.glob(".report.json.*.tmp")), [])
 
     def test_atomic_report_write_does_not_follow_raced_parent_symlink(self):
@@ -247,7 +247,7 @@ wheels = [
 
         self.assertEqual(result.returncode, 1)  # The fixture intentionally has missing wheels.
         self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["schema"],
-                         "hermes-v0232-wheel-reconciliation-v3")
+                         "hermes-v0232-wheel-reconciliation-v4")
 
     def test_atomic_report_write_refuses_moved_wheelhouse_as_missing_parent(self):
         self.write_lock(b"fixture wheel contents")
@@ -453,6 +453,69 @@ wheels = [
         psutil = next(item for item in report["packages"] if item["name"] == "psutil")
         self.assertEqual(psutil["status"], "compatible-wheel-not-present")
         self.assertEqual(psutil["classification"], "locked-wheel-missing-locally")
+
+    def test_reports_unlocked_target_wheel_even_when_locked_wheel_is_present(self):
+        locked_name = self.write_lock(b"locked wheel bytes")
+        self.requirements.write_text("cffi==2.1.1\n", encoding="utf-8")
+        (self.wheelhouse / locked_name).write_bytes(b"locked wheel bytes")
+        extra_name = "cffi-2.1.1-cp314-cp314-linux_i686.whl"
+        extra_bytes = b"compatible but unlocked wheel bytes"
+        (self.wheelhouse / extra_name).write_bytes(extra_bytes)
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        self.assertEqual(report["packages"][0]["status"], "verified")
+        self.assertEqual(report["wheelhouse_anomaly_summary"], {"unlocked-wheel": 1})
+        self.assertEqual(
+            report["wheelhouse_anomalies"],
+            [{
+                "name": "cffi",
+                "version": "2.1.1",
+                "filename": extra_name,
+                "sha256": hashlib.sha256(extra_bytes).hexdigest(),
+                "status": "wheel-not-in-lock",
+                "classification": "unlocked-wheel",
+            }],
+        )
+
+    def test_unlocked_wheel_does_not_hide_missing_locked_compatible_wheel(self):
+        self.write_lock(b"fixture cffi bytes", psutil_platform="manylinux_2_17_i686")
+        self.requirements.write_text("psutil==7.2.2\n", encoding="utf-8")
+        extra_name = "psutil-7.2.2-cp314-cp314-linux_i686.whl"
+        extra_bytes = b"psutil wheel not present in lock"
+        (self.wheelhouse / extra_name).write_bytes(extra_bytes)
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        psutil = report["packages"][0]
+        self.assertEqual(psutil["status"], "compatible-wheel-not-present")
+        self.assertEqual(psutil["classification"], "locked-wheel-missing-locally")
+        self.assertEqual(report["wheelhouse_anomaly_summary"], {"unlocked-wheel": 1})
+        self.assertEqual(report["wheelhouse_anomalies"][0]["filename"], extra_name)
+
+    def test_reports_compatible_wheel_for_unplanned_distribution(self):
+        self.write_lock(b"fixture cffi bytes")
+        self.requirements.write_text("cffi==2.1.1\n", encoding="utf-8")
+        locked_name = "cffi-2.1.1-cp314-cp314-manylinux_2_17_i686.whl"
+        (self.wheelhouse / locked_name).write_bytes(b"fixture cffi bytes")
+        extra_name = "orphan-1.0-cp314-cp314-linux_i686.whl"
+        extra_bytes = b"unplanned compatible wheel"
+        (self.wheelhouse / extra_name).write_bytes(extra_bytes)
+
+        result = self.run_tool()
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(self.report.read_text(encoding="utf-8"))
+        self.assertEqual(report["packages"][0]["status"], "verified")
+        self.assertEqual(report["wheelhouse_anomaly_summary"], {"unexpected-wheel": 1})
+        anomaly = report["wheelhouse_anomalies"][0]
+        self.assertEqual(anomaly["status"], "package-not-in-plan")
+        self.assertEqual(anomaly["classification"], "unexpected-wheel")
+        self.assertEqual(anomaly["filename"], extra_name)
 
     def test_rejects_locked_sdist_without_a_sha256_digest(self):
         self.write_lock(b"fixture wheel contents")

@@ -486,11 +486,13 @@ def reconcile(
                 }
             elif compatible:
                 locked_names = {expected["filename"] for expected in locked}
-                status = (
-                    "hash-mismatch"
-                    if any(wheel["filename"] in locked_names for wheel in compatible)
-                    else "wheel-not-in-lock"
-                )
+                if any(wheel["filename"] in locked_names for wheel in compatible):
+                    status = "hash-mismatch"
+                elif locked_compatible:
+                    # An unrelated compatible wheel cannot replace a target wheel pinned by the lock.
+                    status = "compatible-wheel-not-present"
+                else:
+                    status = "wheel-not-in-lock"
                 result = {"name": name, "version": version, "status": status}
             elif not locked_compatible:
                 result = {"name": name, "version": version, "status": "no-compatible-wheel"}
@@ -505,6 +507,45 @@ def reconcile(
     return results
 
 
+def wheelhouse_anomalies(
+    plan: dict[str, str],
+    lock: dict[tuple[str, str], list[dict[str, str]]],
+    wheels: list[dict[str, object]],
+    target_tags: set[str],
+) -> list[dict[str, str]]:
+    """List target-compatible local wheels that are not an exact locked plan artifact."""
+    anomalies: list[dict[str, str]] = []
+    for wheel in wheels:
+        if not (wheel["tags"] & target_tags):
+            continue
+        name = str(wheel["name"])
+        version = str(wheel["version"])
+        key = (name, version)
+        if plan.get(name) != version:
+            status = "package-not-in-plan"
+        elif key not in lock:
+            status = "package-not-in-lock"
+        else:
+            locked = lock[key]
+            filename_matches = [
+                item for item in locked if item["filename"] == wheel["filename"]
+            ]
+            if any(item["sha256"] == wheel["sha256"] for item in filename_matches):
+                continue
+            status = "hash-mismatch" if filename_matches else "wheel-not-in-lock"
+        anomalies.append(
+            {
+                "name": name,
+                "version": version,
+                "filename": str(wheel["filename"]),
+                "sha256": str(wheel["sha256"]),
+                "status": status,
+                "classification": classify_result(status, False),
+            }
+        )
+    return anomalies
+
+
 def classify_result(status: str, has_source_distribution: bool) -> str:
     """Separate artifact inventory outcomes from integrity failures and build gaps."""
     if status == "verified":
@@ -515,6 +556,8 @@ def classify_result(status: str, has_source_distribution: bool) -> str:
         return "unlocked-wheel"
     if status == "package-not-in-lock":
         return "plan-lock-mismatch"
+    if status == "package-not-in-plan":
+        return "unexpected-wheel"
     if status == "no-compatible-wheel":
         if has_source_distribution:
             return "source-build-candidate"
@@ -576,7 +619,9 @@ def main() -> int:
 
         plan = parse_requirements(args.requirements)
         lock, source_distributions, lock_metadata = lock_artifacts(args.lock)
-        results = reconcile(plan, lock, source_distributions, local_wheels(args.wheelhouse), target_tags)
+        wheels = local_wheels(args.wheelhouse)
+        results = reconcile(plan, lock, source_distributions, wheels, target_tags)
+        anomalies = wheelhouse_anomalies(plan, lock, wheels, target_tags)
         counts: dict[str, int] = {}
         classifications: dict[str, int] = {}
         for result in results:
@@ -584,8 +629,12 @@ def main() -> int:
             counts[status] = counts.get(status, 0) + 1
             classification = str(result["classification"])
             classifications[classification] = classifications.get(classification, 0) + 1
+        anomaly_counts: dict[str, int] = {}
+        for anomaly in anomalies:
+            classification = anomaly["classification"]
+            anomaly_counts[classification] = anomaly_counts.get(classification, 0) + 1
         report = {
-            "schema": "hermes-v0232-wheel-reconciliation-v3",
+            "schema": "hermes-v0232-wheel-reconciliation-v4",
             "target": identity,
             "target_tag_count": len(target_tags),
             "target_tags_sha256": tags_sha,
@@ -594,6 +643,8 @@ def main() -> int:
             "wheelhouse_file_count": len(list(args.wheelhouse.rglob("*.whl"))),
             "summary": {"plan": len(results), **counts},
             "classification_summary": classifications,
+            "wheelhouse_anomaly_summary": anomaly_counts,
+            "wheelhouse_anomalies": anomalies,
             "packages": results,
         }
         encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
@@ -603,7 +654,7 @@ def main() -> int:
             write_report_atomically(args.output, encoded, output_path_guard)
         else:
             sys.stdout.write(encoded)
-        return 0 if all(item["status"] == "verified" for item in results) else 1
+        return 0 if all(item["status"] == "verified" for item in results) and not anomalies else 1
     except (OSError, ValueError, tomllib.TOMLDecodeError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         print(f"wheel reconciliation: ERROR: {exc}", file=sys.stderr)
         return 2
